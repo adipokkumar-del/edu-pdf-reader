@@ -1,16 +1,16 @@
-import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../data/services/reading_store.dart';
 import '../../providers/annotation_provider.dart';
 import '../widgets/drawing_canvas.dart';
-import '../widgets/empty_state.dart';
 import '../widgets/toolbar_widget.dart';
 
 class ReaderScreen extends StatefulWidget {
@@ -22,166 +22,234 @@ class ReaderScreen extends StatefulWidget {
   State<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends State<ReaderScreen> {
-  static const _gap = 12.0;
-  static const _zoomLevels = [1.0, 1.5, 2.0, 3.0];
+class _ReaderScreenState extends State<ReaderScreen>
+    with WidgetsBindingObserver {
+  final _controller = PdfViewerController();
+  final _searchField = TextEditingController();
+  final _page = ValueNotifier<int>(1);
+  final _pageCount = ValueNotifier<int>(0);
+  late final PdfTextSearcher _searcher;
+  late final PdfViewerParams _params;
 
-  final _scroll = ScrollController();
-  final _page = ValueNotifier<int>(0);
-  final _cache = <String, Future<Uint8List?>>{};
-  Future<void> _tail = Future.value();
+  Timer? _saveTimer;
+  Timer? _searchTimer;
 
-  SharedPreferences? _prefs;
-  PdfDocument? _doc;
+  ReadingStore? _store;
   AnnotationProvider? _annotations;
-  List<double> _aspects = const [];
-  Object? _error;
-
-  double _zoom = 1.0;
-  double _pageW = 0;
-  double _viewH = 0;
-  bool _restored = false;
+  ReadingPosition? _saved;
+  Set<int> _bookmarks = {};
+  bool _canSave = false;
+  bool _searching = false;
 
   String get _title => p.basenameWithoutExtension(widget.path);
-  String get _pageKey => 'last_page:${widget.path}';
 
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
+    WidgetsBinding.instance.addObserver(this);
+
+    _searcher = PdfTextSearcher(_controller)..addListener(_onSearchChanged);
+    _controller.addListener(_scheduleSave);
+
+    _params = PdfViewerParams(
+      backgroundColor: AppColors.brownSurface,
+      margin: 8,
+      textSelectionParams: const PdfTextSelectionParams(enabled: true),
+      matchTextColor: const Color(0x66F9A825),
+      activeMatchTextColor: const Color(0x99EF6C00),
+      pagePaintCallbacks: [_searcher.pageTextMatchPaintCallback],
+      pageOverlaysBuilder: (context, pageRect, page) => [
+        PageStrokesLayer(pageIndex: page.pageNumber - 1),
+      ],
+      calculateInitialPageNumber: (document, controller) => _saved?.page,
+      onViewerReady: _onViewerReady,
+      onPageChanged: _onPageChanged,
+    );
+
     _init();
+  }
+
+  Future<void> _init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = ReadingStore(prefs, widget.path);
+    if (!mounted) return;
+    setState(() {
+      _store = store;
+      _saved = store.loadPosition();
+      _bookmarks = store.loadBookmarks().toSet();
+      _annotations = AnnotationProvider(prefs, widget.path);
+      _page.value = _saved?.page ?? 1;
+    });
   }
 
   @override
   void dispose() {
-    _scroll.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _saveTimer?.cancel();
+    _searchTimer?.cancel();
+    _saveProgress();
+    _controller.removeListener(_scheduleSave);
+    _searcher.removeListener(_onSearchChanged);
+    _searcher.dispose();
+    _searchField.dispose();
     _page.dispose();
+    _pageCount.dispose();
     _annotations?.dispose();
-    _doc?.close();
     super.dispose();
   }
 
-  Future<void> _init() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final doc = await PdfDocument.openFile(widget.path);
-      final aspects = <double>[];
-      for (var i = 1; i <= doc.pagesCount; i++) {
-        final page = await doc.getPage(i);
-        aspects.add(page.height / page.width);
-        await page.close();
-      }
-      if (aspects.isEmpty) throw StateError('Empty document');
-      if (!mounted) {
-        await doc.close();
-        return;
-      }
-      setState(() {
-        _prefs = prefs;
-        _doc = doc;
-        _aspects = aspects;
-        _annotations = AnnotationProvider(prefs, widget.path);
-      });
-    } catch (e) {
-      if (mounted) setState(() => _error = e);
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _saveProgress();
     }
   }
 
-  // ---- Page geometry ------------------------------------------------------
+  // ---- Auto-resume --------------------------------------------------------
 
-  double _pageH(int i) => _pageW * _aspects[i];
-
-  double _offsetOf(int index) {
-    var offset = 0.0;
-    for (var k = 0; k < index; k++) {
-      offset += _pageH(k) + _gap;
-    }
-    return offset;
-  }
-
-  int _indexAt(double probe) {
-    var top = _gap;
-    for (var i = 0; i < _aspects.length; i++) {
-      final bottom = top + _pageH(i);
-      if (probe < bottom + _gap / 2) return i;
-      top = bottom + _gap;
-    }
-    return _aspects.length - 1;
-  }
-
-  void _jumpTo(int index) {
-    if (!_scroll.hasClients) return;
-    final max = _scroll.position.maxScrollExtent;
-    _scroll.jumpTo(_offsetOf(index).clamp(0.0, max));
-  }
-
-  void _onScroll() {
-    if (_aspects.isEmpty || _pageW == 0 || !_scroll.hasClients) return;
-    final index = _indexAt(_scroll.offset + _viewH / 2);
-    if (index != _page.value) {
-      _page.value = index;
-      _prefs?.setInt(_pageKey, index);
-    }
-  }
-
-  // ---- Rendering ----------------------------------------------------------
-
-  /// Runs tasks one at a time so only one PDF page is open at once.
-  Future<T> _serial<T>(Future<T> Function() task) {
-    final run = _tail.then((_) => task());
-    _tail = run.then<void>((_) {}, onError: (_) {});
-    return run;
-  }
-
-  Future<Uint8List?> _render(int index, int px) async {
-    final doc = _doc;
-    if (doc == null) return null;
-    try {
-      final page = await doc.getPage(index + 1);
+  Future<void> _onViewerReady(
+    PdfDocument document,
+    PdfViewerController controller,
+  ) async {
+    final saved = _saved;
+    if (saved != null && saved.zoom > 0) {
       try {
-        final image = await page.render(
-          width: px.toDouble(),
-          height: px * _aspects[index],
-          format: PdfPageImageFormat.jpeg,
-          backgroundColor: '#FFFFFF',
-          quality: 85,
+        await controller.goToPosition(
+          documentOffset: Offset(saved.x, saved.y),
+          zoom: saved.zoom,
         );
-        return image?.bytes;
-      } finally {
-        await page.close();
+      } catch (_) {}
+    }
+    _canSave = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pageCount.value = controller.pageCount;
+    });
+  }
+
+  void _onPageChanged(int? number) {
+    if (number == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _page.value = number;
+    });
+  }
+
+  void _scheduleSave() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 500), _saveProgress);
+  }
+
+  void _saveProgress() {
+    final store = _store;
+    if (store == null || !_canSave || !_controller.isReady) return;
+    try {
+      final top = _controller.visibleRect.topLeft;
+      store.savePosition(ReadingPosition(
+        page: _controller.pageNumber ?? _page.value,
+        x: top.dx,
+        y: top.dy,
+        zoom: _controller.currentZoom,
+      ));
+    } catch (_) {}
+  }
+
+  // ---- Search -------------------------------------------------------------
+
+  void _onSearchChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onSearchTyped(String query) {
+    _searchTimer?.cancel();
+    _searchTimer = Timer(const Duration(milliseconds: 400), () {
+      final q = query.trim();
+      if (q.isEmpty) {
+        _searcher.resetTextSearch();
+      } else {
+        _searcher.startTextSearch(q, caseInsensitive: true);
       }
-    } catch (_) {
-      return null;
-    }
+    });
   }
 
-  Future<Uint8List?> _image(int index, int px) {
-    final key = '$index@$px';
-    final hit = _cache.remove(key);
-    if (hit != null) {
-      _cache[key] = hit;
-      return hit;
-    }
-    final future = _serial(() => _render(index, px));
-    _cache[key] = future;
-    while (_cache.length > 10) {
-      _cache.remove(_cache.keys.first);
-    }
-    return future;
+  void _closeSearch() {
+    _searchTimer?.cancel();
+    _searcher.resetTextSearch();
+    _searchField.clear();
+    setState(() => _searching = false);
   }
 
-  // ---- Actions ------------------------------------------------------------
-
-  void _cycleZoom() {
-    final page = _page.value;
-    final next =
-        _zoomLevels[(_zoomLevels.indexOf(_zoom) + 1) % _zoomLevels.length];
-    setState(() => _zoom = next);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpTo(page));
+  String get _searchStatus {
+    if (_searchField.text.trim().isEmpty) return '';
+    if (!_searcher.hasMatches) return _searcher.isSearching ? '…' : '0';
+    final current = (_searcher.currentIndex ?? 0) + 1;
+    final more = _searcher.isSearching ? '+' : '';
+    return '$current/${_searcher.matches.length}$more';
   }
+
+  // ---- Bookmarks ----------------------------------------------------------
+
+  void _toggleBookmark(int page) {
+    setState(() {
+      if (!_bookmarks.remove(page)) _bookmarks.add(page);
+    });
+    _store?.saveBookmarks(_bookmarks);
+  }
+
+  void _showBookmarks() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final pages = _bookmarks.toList()..sort();
+          if (pages.isEmpty) {
+            return const SizedBox(
+              height: 160,
+              child: Center(
+                child: Text(
+                  'No bookmarks yet',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+            );
+          }
+          return ListView(
+            shrinkWrap: true,
+            children: [
+              for (final n in pages)
+                ListTile(
+                  leading: const Icon(Icons.bookmark_rounded,
+                      color: AppColors.brown),
+                  title: Text('Page $n'),
+                  trailing: IconButton(
+                    tooltip: 'Remove',
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () {
+                      setState(() {
+                        _bookmarks.remove(n);
+                      });
+                      _store?.saveBookmarks(_bookmarks);
+                      setSheet(() {});
+                    },
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _controller.goToPage(pageNumber: n);
+                  },
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // ---- Other actions ------------------------------------------------------
 
   Future<void> _goTo() async {
     final controller = TextEditingController();
+    final total = _pageCount.value;
     final value = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -191,7 +259,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           controller: controller,
           autofocus: true,
           keyboardType: TextInputType.number,
-          decoration: InputDecoration(hintText: '1 – ${_aspects.length}'),
+          decoration: InputDecoration(hintText: '1 – $total'),
           onSubmitted: (v) => Navigator.pop(ctx, int.tryParse(v)),
         ),
         actions: [
@@ -206,12 +274,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
         ],
       ),
     );
-    if (value == null) return;
-    _jumpTo((value - 1).clamp(0, _aspects.length - 1));
+    if (value == null || total == 0) return;
+    _controller.goToPage(pageNumber: value.clamp(1, total));
   }
 
   Future<void> _share() =>
       Share.shareXFiles([XFile(widget.path)], subject: _title);
+
+  void _onMenu(String value) {
+    switch (value) {
+      case 'bookmarks':
+        _showBookmarks();
+      case 'goto':
+        _goTo();
+      case 'share':
+        _share();
+    }
+  }
 
   // ---- UI -----------------------------------------------------------------
 
@@ -224,17 +303,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) {
-      return Scaffold(
-        appBar: AppBar(title: _titleText()),
-        body: const EmptyState(
-          icon: Icons.error_outline_rounded,
-          title: 'Cannot open this PDF',
-          message: 'The file may be damaged, password-protected or moved.',
-        ),
-      );
-    }
-
     final annotations = _annotations;
     if (annotations == null) {
       return Scaffold(
@@ -248,59 +316,34 @@ class _ReaderScreenState extends State<ReaderScreen> {
       child: Builder(builder: (context) {
         final drawing =
             context.select<AnnotationProvider, bool>((a) => a.drawing);
+        final hand = context.select<AnnotationProvider, bool>((a) => a.hand);
 
         return PopScope(
-          canPop: !drawing,
+          canPop: !drawing && !_searching,
           onPopInvokedWithResult: (didPop, _) {
-            if (!didPop) annotations.setDrawing(false);
+            if (didPop) return;
+            if (_searching) {
+              _closeSearch();
+            } else {
+              annotations.setDrawing(false);
+            }
           },
           child: Scaffold(
-            appBar: AppBar(
-              titleSpacing: 0,
-              title: _titleText(),
-              actions: [
-                TextButton(
-                  onPressed: _cycleZoom,
-                  child: Text(
-                    _zoom == _zoom.roundToDouble()
-                        ? '${_zoom.toInt()}×'
-                        : '$_zoom×',
-                    style: const TextStyle(
-                      color: AppColors.brown,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: drawing ? 'Done' : 'Annotate',
-                  isSelected: drawing,
-                  icon: const Icon(Icons.draw_outlined),
-                  selectedIcon: const Icon(Icons.check_rounded),
-                  onPressed: () => annotations.setDrawing(!drawing),
-                  style: IconButton.styleFrom(
-                    backgroundColor: drawing ? AppColors.brown : null,
-                    foregroundColor:
-                        drawing ? Colors.white : AppColors.brownDark,
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Share',
-                  icon: const Icon(Icons.ios_share_rounded),
-                  onPressed: _share,
-                ),
-                const SizedBox(width: 4),
-              ],
-            ),
+            appBar: _searching ? _buildSearchBar() : _buildBar(drawing),
             body: Stack(
               children: [
                 Positioned.fill(
-                  child: ColoredBox(
-                    color: AppColors.brownSurface,
-                    child: LayoutBuilder(
-                      builder: (context, c) => _buildViewer(context, c, drawing),
-                    ),
+                  child: PdfViewer.file(
+                    widget.path,
+                    key: ValueKey(widget.path),
+                    controller: _controller,
+                    params: _params,
                   ),
                 ),
+                if (drawing && !hand)
+                  Positioned.fill(
+                    child: InkInputLayer(controller: _controller),
+                  ),
                 Positioned(
                   bottom: 16,
                   left: 0,
@@ -316,151 +359,125 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  AppBar _buildBar(bool drawing) {
+    final annotations = _annotations!;
+    return AppBar(
+      titleSpacing: 0,
+      title: _titleText(),
+      actions: [
+        IconButton(
+          tooltip: 'Search',
+          icon: const Icon(Icons.search_rounded),
+          onPressed: () => setState(() => _searching = true),
+        ),
+        ValueListenableBuilder<int>(
+          valueListenable: _page,
+          builder: (_, page, __) {
+            final marked = _bookmarks.contains(page);
+            return IconButton(
+              tooltip: marked ? 'Remove bookmark' : 'Bookmark this page',
+              icon: Icon(
+                marked
+                    ? Icons.bookmark_rounded
+                    : Icons.bookmark_border_rounded,
+                color: marked ? AppColors.brown : null,
+              ),
+              onPressed: () => _toggleBookmark(page),
+            );
+          },
+        ),
+        IconButton(
+          tooltip: drawing ? 'Done' : 'Annotate',
+          isSelected: drawing,
+          icon: const Icon(Icons.draw_outlined),
+          selectedIcon: const Icon(Icons.check_rounded),
+          onPressed: () => annotations.setDrawing(!drawing),
+          style: IconButton.styleFrom(
+            backgroundColor: drawing ? AppColors.brown : null,
+            foregroundColor: drawing ? Colors.white : AppColors.brownDark,
+          ),
+        ),
+        PopupMenuButton<String>(
+          color: Colors.white,
+          onSelected: _onMenu,
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'bookmarks', child: Text('Bookmarks')),
+            PopupMenuItem(value: 'goto', child: Text('Go to page')),
+            PopupMenuItem(value: 'share', child: Text('Share')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  AppBar _buildSearchBar() {
+    return AppBar(
+      titleSpacing: 0,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: _closeSearch,
+      ),
+      title: TextField(
+        controller: _searchField,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        onChanged: _onSearchTyped,
+        decoration: const InputDecoration(
+          hintText: 'Search in document',
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          filled: false,
+        ),
+      ),
+      actions: [
+        Center(
+          child: Text(
+            _searchStatus,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Previous match',
+          icon: const Icon(Icons.keyboard_arrow_up_rounded),
+          onPressed: _searcher.hasMatches ? _searcher.goToPrevMatch : null,
+        ),
+        IconButton(
+          tooltip: 'Next match',
+          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+          onPressed: _searcher.hasMatches ? _searcher.goToNextMatch : null,
+        ),
+      ],
+    );
+  }
+
   Widget _buildPagePill() {
-    return ValueListenableBuilder<int>(
-      valueListenable: _page,
-      builder: (_, value, __) => Material(
-        color: AppColors.brownDark.withValues(alpha: 0.9),
-        shape: const StadiumBorder(),
-        child: InkWell(
-          customBorder: const StadiumBorder(),
-          onTap: _goTo,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(
-              '${value + 1} / ${_aspects.length}',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
+    return AnimatedBuilder(
+      animation: Listenable.merge([_page, _pageCount]),
+      builder: (_, __) {
+        if (_pageCount.value == 0) return const SizedBox.shrink();
+        return Material(
+          color: AppColors.brownDark.withValues(alpha: 0.9),
+          shape: const StadiumBorder(),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: _goTo,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                '${_page.value} / ${_pageCount.value}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildViewer(BuildContext context, BoxConstraints c, bool drawing) {
-    _viewH = c.maxHeight;
-    _pageW = (c.maxWidth - _gap * 2) * _zoom;
-
-    if (!_restored) {
-      _restored = true;
-      final saved =
-          (_prefs?.getInt(_pageKey) ?? 0).clamp(0, _aspects.length - 1);
-      if (saved > 0) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _jumpTo(saved);
-          _page.value = saved;
-        });
-      }
-    }
-
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final px = (_pageW * dpr).round().clamp(240, 2800);
-    final physics = drawing
-        ? const NeverScrollableScrollPhysics()
-        : const ClampingScrollPhysics();
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: physics,
-      child: SizedBox(
-        width: _pageW + _gap * 2,
-        height: c.maxHeight,
-        child: ListView.builder(
-          controller: _scroll,
-          physics: physics,
-          cacheExtent: c.maxHeight,
-          padding: const EdgeInsets.all(_gap),
-          itemCount: _aspects.length,
-          itemBuilder: (context, i) => Padding(
-            padding: EdgeInsets.only(
-              bottom: i == _aspects.length - 1 ? 0 : _gap,
-            ),
-            child: _PageTile(
-              key: ValueKey('page-$i'),
-              index: i,
-              width: _pageW,
-              height: _pageH(i),
-              image: _image(i, px),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _PageTile extends StatelessWidget {
-  const _PageTile({
-    super.key,
-    required this.index,
-    required this.width,
-    required this.height,
-    required this.image,
-  });
-
-  final int index;
-  final double width;
-  final double height;
-  final Future<Uint8List?> image;
-
-  @override
-  Widget build(BuildContext context) {
-    final a = context.watch<AnnotationProvider>();
-
-    return Container(
-      width: width,
-      height: height,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(4),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.brownDark.withValues(alpha: 0.12),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          FutureBuilder<Uint8List?>(
-            future: image,
-            builder: (context, snapshot) {
-              final bytes = snapshot.data;
-              if (bytes != null) {
-                return Image.memory(bytes, fit: BoxFit.fill, gaplessPlayback: true);
-              }
-              if (snapshot.connectionState == ConnectionState.done) {
-                return const Center(
-                  child: Icon(Icons.broken_image_outlined,
-                      color: AppColors.textSecondary),
-                );
-              }
-              return const Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              );
-            },
-          ),
-          DrawingCanvas(
-            strokes: a.strokesFor(index),
-            enabled: a.drawing,
-            tool: a.tool,
-            color: a.color,
-            onStroke: (stroke) => a.addStroke(index, stroke),
-            onErase: (at, aspect) => a.eraseAt(index, at, aspect),
-            onEraseEnd: a.endErase,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
