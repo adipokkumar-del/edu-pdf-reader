@@ -1,99 +1,125 @@
 import 'package:flutter/material.dart';
+import 'package:pdfrx/pdfrx.dart';
+import 'package:provider/provider.dart';
 
 import '../../data/models/annotation_model.dart';
 import '../../providers/annotation_provider.dart';
 
-class DrawingCanvas extends StatefulWidget {
-  const DrawingCanvas({
-    super.key,
-    required this.strokes,
-    required this.enabled,
-    required this.tool,
-    required this.color,
-    required this.onStroke,
-    required this.onErase,
-    required this.onEraseEnd,
-  });
+/// Paints saved and in-progress strokes of one page. Never handles touches.
+class PageStrokesLayer extends StatelessWidget {
+  const PageStrokesLayer({super.key, required this.pageIndex});
 
-  final List<Stroke> strokes;
-  final bool enabled;
-  final AnnotTool tool;
-  final Color color;
-  final ValueChanged<Stroke> onStroke;
-  final void Function(Offset normalized, double aspect) onErase;
-  final VoidCallback onEraseEnd;
+  final int pageIndex;
 
   @override
-  State<DrawingCanvas> createState() => _DrawingCanvasState();
-}
-
-class _DrawingCanvasState extends State<DrawingCanvas> {
-  static const _penWidth = 0.005;
-  static const _highlighterWidth = 0.03;
-
-  final _live = _LiveStroke();
-  int? _pointer;
-
-  bool get _isHighlighter => widget.tool == AnnotTool.highlighter;
-  double get _width => _isHighlighter ? _highlighterWidth : _penWidth;
-
-  @override
-  void dispose() {
-    _live.dispose();
-    super.dispose();
-  }
-
-  Offset _norm(Offset local) {
-    final s = context.size!;
-    return Offset(
-      (local.dx / s.width).clamp(0.0, 1.0),
-      (local.dy / s.height).clamp(0.0, 1.0),
+  Widget build(BuildContext context) {
+    final a = context.watch<AnnotationProvider>();
+    return IgnorePointer(
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _StrokePainter(
+          strokes: a.strokesFor(pageIndex),
+          live: a.live,
+          pageIndex: pageIndex,
+          liveColor: a.color,
+          liveWidth: a.currentWidth,
+          liveHighlighter: a.tool == AnnotTool.highlighter,
+        ),
+      ),
     );
   }
+}
 
-  void _erase(Offset local) {
-    final s = context.size!;
-    widget.onErase(_norm(local), s.height / s.width);
+/// Full-screen touch layer used while annotating. It converts each touch
+/// into page-relative coordinates, so strokes stay put at any zoom level.
+class InkInputLayer extends StatefulWidget {
+  const InkInputLayer({super.key, required this.controller});
+
+  final PdfViewerController controller;
+
+  @override
+  State<InkInputLayer> createState() => _InkInputLayerState();
+}
+
+class _InkInputLayerState extends State<InkInputLayer> {
+  int? _pointer;
+  int _page = -1;
+  Rect _rect = Rect.zero;
+
+  Offset _toDoc(Offset local) => widget.controller.localToDocument(local);
+
+  Offset _norm(Offset doc) => Offset(
+        ((doc.dx - _rect.left) / _rect.width).clamp(0.0, 1.0),
+        ((doc.dy - _rect.top) / _rect.height).clamp(0.0, 1.0),
+      );
+
+  void _erase(Offset doc) {
+    context.read<AnnotationProvider>().eraseAt(
+          _page,
+          _norm(doc),
+          _rect.height / _rect.width,
+        );
   }
 
   void _down(PointerDownEvent e) {
-    if (!widget.enabled || _pointer != null) return;
+    final c = widget.controller;
+    if (_pointer != null || !c.isReady) return;
+
+    final doc = _toDoc(e.localPosition);
+    final rects = c.layout.pageLayouts;
+    final index = rects.indexWhere((r) => r.inflate(6).contains(doc));
+    if (index < 0) return;
+
     _pointer = e.pointer;
-    if (widget.tool == AnnotTool.eraser) {
-      _erase(e.localPosition);
+    _page = index;
+    _rect = rects[index];
+
+    final a = context.read<AnnotationProvider>();
+    if (a.tool == AnnotTool.eraser) {
+      _erase(doc);
     } else {
-      _live.start(_norm(e.localPosition));
+      a.live.start(index, _norm(doc));
     }
   }
 
   void _move(PointerMoveEvent e) {
     if (e.pointer != _pointer) return;
-    if (widget.tool == AnnotTool.eraser) {
-      _erase(e.localPosition);
+    final a = context.read<AnnotationProvider>();
+    final doc = _toDoc(e.localPosition);
+
+    if (a.tool == AnnotTool.eraser) {
+      _erase(doc);
       return;
     }
-    final n = _norm(e.localPosition);
-    final distancePx = (n - _live.points.last).distance * context.size!.width;
-    if (distancePx < 1.5) return;
-    _live.add(n);
+    final n = _norm(doc);
+    final stepPx = (n - a.live.points.last).distance *
+        _rect.width *
+        widget.controller.currentZoom;
+    if (stepPx < 1.5) return;
+    a.live.add(n);
   }
 
   void _end(PointerEvent e) {
     if (e.pointer != _pointer) return;
     _pointer = null;
-    if (widget.tool == AnnotTool.eraser) {
-      widget.onEraseEnd();
+
+    final a = context.read<AnnotationProvider>();
+    if (a.tool == AnnotTool.eraser) {
+      a.endErase();
       return;
     }
-    if (_live.points.isNotEmpty) {
-      widget.onStroke(Stroke(
-        points: List.of(_live.points),
-        colorValue: widget.color.toARGB32(),
-        width: _width,
-        highlighter: _isHighlighter,
-      ));
+    if (a.live.points.isNotEmpty) {
+      a.addStroke(
+        _page,
+        Stroke(
+          points: List.of(a.live.points),
+          colorValue: a.color.toARGB32(),
+          width: a.currentWidth,
+          highlighter: a.tool == AnnotTool.highlighter,
+        ),
+      );
     }
-    _live.clear();
+    a.live.clear();
   }
 
   @override
@@ -104,40 +130,8 @@ class _DrawingCanvasState extends State<DrawingCanvas> {
       onPointerMove: _move,
       onPointerUp: _end,
       onPointerCancel: _end,
-      child: RepaintBoundary(
-        child: CustomPaint(
-          size: Size.infinite,
-          painter: _StrokePainter(
-            strokes: widget.strokes,
-            live: _live,
-            liveColor: widget.color,
-            liveWidth: _width,
-            liveHighlighter: _isHighlighter,
-          ),
-        ),
-      ),
+      child: const SizedBox.expand(),
     );
-  }
-}
-
-class _LiveStroke extends ChangeNotifier {
-  final List<Offset> points = [];
-
-  void start(Offset p) {
-    points
-      ..clear()
-      ..add(p);
-    notifyListeners();
-  }
-
-  void add(Offset p) {
-    points.add(p);
-    notifyListeners();
-  }
-
-  void clear() {
-    points.clear();
-    notifyListeners();
   }
 }
 
@@ -145,13 +139,15 @@ class _StrokePainter extends CustomPainter {
   _StrokePainter({
     required this.strokes,
     required this.live,
+    required this.pageIndex,
     required this.liveColor,
     required this.liveWidth,
     required this.liveHighlighter,
   }) : super(repaint: live);
 
   final List<Stroke> strokes;
-  final _LiveStroke live;
+  final LiveStroke live;
+  final int pageIndex;
   final Color liveColor;
   final double liveWidth;
   final bool liveHighlighter;
@@ -161,7 +157,7 @@ class _StrokePainter extends CustomPainter {
     for (final s in strokes) {
       _draw(canvas, size, s.points, s.color, s.width, s.highlighter);
     }
-    if (live.points.isNotEmpty) {
+    if (live.page == pageIndex && live.points.isNotEmpty) {
       _draw(canvas, size, live.points, liveColor, liveWidth, liveHighlighter);
     }
   }
@@ -196,6 +192,7 @@ class _StrokePainter extends CustomPainter {
   @override
   bool shouldRepaint(_StrokePainter old) =>
       old.strokes != strokes ||
+      old.pageIndex != pageIndex ||
       old.liveColor != liveColor ||
       old.liveWidth != liveWidth ||
       old.liveHighlighter != liveHighlighter;
