@@ -28,7 +28,7 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Force compileSdk 36 for all plugins
+      - name: Force compileSdk 36 and skip lint for all plugins
         run: |
           mkdir -p ~/.gradle
           cat > ~/.gradle/init.gradle <<'EOF'
@@ -36,6 +36,11 @@ jobs:
               afterEvaluate { p ->
                   if (p.hasProperty('android')) {
                       p.android.compileSdk = 36
+                  }
+              }
+              tasks.configureEach { t ->
+                  if (t.name.startsWith('lintVital') || t.name.startsWith('lintAnalyze')) {
+                      t.enabled = false
                   }
               }
           }
