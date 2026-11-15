@@ -28,6 +28,19 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Force compileSdk 36 for all plugins
+        run: |
+          mkdir -p ~/.gradle
+          cat > ~/.gradle/init.gradle <<'EOF'
+          allprojects {
+              afterEvaluate { p ->
+                  if (p.hasProperty('android')) {
+                      p.android.compileSdk = 36
+                  }
+              }
+          }
+          EOF
+
       - name: Recreate Android project
         run: |
           rm -rf android
