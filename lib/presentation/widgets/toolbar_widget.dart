@@ -29,17 +29,18 @@ class AnnotationToolbar extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
+                _ToolButton(
+                  icon: Icons.pan_tool_alt_rounded,
+                  label: 'Move / zoom',
+                  selected: a.hand,
+                  onTap: () => a.setHand(!a.hand),
+                ),
                 for (final (tool, icon, label) in _tools)
-                  IconButton(
-                    tooltip: label,
-                    onPressed: () => a.setTool(tool),
-                    icon: Icon(icon),
-                    style: IconButton.styleFrom(
-                      backgroundColor:
-                          a.tool == tool ? AppColors.brown : Colors.transparent,
-                      foregroundColor:
-                          a.tool == tool ? Colors.white : AppColors.brownDark,
-                    ),
+                  _ToolButton(
+                    icon: icon,
+                    label: label,
+                    selected: !a.hand && a.tool == tool,
+                    onTap: () => a.setTool(tool),
                   ),
                 const SizedBox(width: 8),
                 if (a.tool != AnnotTool.eraser)
@@ -60,6 +61,33 @@ class AnnotationToolbar extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _ToolButton extends StatelessWidget {
+  const _ToolButton({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: label,
+      onPressed: onTap,
+      icon: Icon(icon),
+      style: IconButton.styleFrom(
+        backgroundColor: selected ? AppColors.brown : Colors.transparent,
+        foregroundColor: selected ? Colors.white : AppColors.brownDark,
       ),
     );
   }
