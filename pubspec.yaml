@@ -1,0 +1,50 @@
+name: edu_pdf_reader
+description: A minimalist education-themed PDF reader with annotation support.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # PDF rendering
+  pdfx: ^2.9.0
+
+  # Canvas drawing / annotations
+  perfect_freehand: ^2.3.0
+
+  # File access
+  file_picker: ^8.1.2
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Local storage (last page, recent files, theme)
+  shared_preferences: ^2.3.2
+
+  # Share
+  share_plus: ^10.0.2
+
+  # State management
+  provider: ^6.1.2
+
+  # UI
+  google_fonts: ^6.2.1
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
