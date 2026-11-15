@@ -7,6 +7,32 @@ import '../data/models/annotation_model.dart';
 
 enum AnnotTool { pen, highlighter, eraser }
 
+/// The stroke being drawn right now. Painters listen to it directly,
+/// so drawing never rebuilds the rest of the UI.
+class LiveStroke extends ChangeNotifier {
+  int page = -1;
+  final List<Offset> points = [];
+
+  void start(int pageIndex, Offset p) {
+    page = pageIndex;
+    points
+      ..clear()
+      ..add(p);
+    notifyListeners();
+  }
+
+  void add(Offset p) {
+    points.add(p);
+    notifyListeners();
+  }
+
+  void clear() {
+    points.clear();
+    page = -1;
+    notifyListeners();
+  }
+}
+
 class AnnotationProvider extends ChangeNotifier {
   AnnotationProvider(this._prefs, this.path) {
     _load();
@@ -19,29 +45,49 @@ class AnnotationProvider extends ChangeNotifier {
     Color(0xFFF9A825),
   ];
 
+  static const penWidth = 0.005;
+  static const highlighterWidth = 0.03;
+
   final SharedPreferences _prefs;
   final String path;
+  final LiveStroke live = LiveStroke();
 
   final Map<int, List<Stroke>> _pages = {};
   final List<(int, List<Stroke>)> _undo = [];
   bool _erasing = false;
 
   bool drawing = false;
+
+  /// While true, one-finger gestures scroll/zoom the PDF instead of drawing.
+  bool hand = false;
   AnnotTool tool = AnnotTool.pen;
   Color color = palette.first;
 
   String get _key => 'annotations:$path';
+
+  double get currentWidth =>
+      tool == AnnotTool.highlighter ? highlighterWidth : penWidth;
 
   List<Stroke> strokesFor(int page) => _pages[page] ?? const [];
   bool get canUndo => _undo.isNotEmpty;
 
   void setDrawing(bool value) {
     drawing = value;
+    if (!value) {
+      hand = false;
+      live.clear();
+    }
+    notifyListeners();
+  }
+
+  void setHand(bool value) {
+    hand = value;
     notifyListeners();
   }
 
   void setTool(AnnotTool value) {
     tool = value;
+    hand = false;
     notifyListeners();
   }
 
@@ -57,7 +103,7 @@ class AnnotationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Removes strokes near [at] (normalized). Returns true if anything changed.
+  /// [at] is normalized (0..1); [aspect] is page height / page width.
   bool eraseAt(int page, Offset at, double aspect, {double radius = 0.03}) {
     final current = strokesFor(page);
     final kept =
@@ -113,5 +159,11 @@ class AnnotationProvider extends ChangeNotifier {
           '${e.key}': [for (final s in e.value) s.toJson()],
     };
     _prefs.setString(_key, jsonEncode(data));
+  }
+
+  @override
+  void dispose() {
+    live.dispose();
+    super.dispose();
   }
 }
