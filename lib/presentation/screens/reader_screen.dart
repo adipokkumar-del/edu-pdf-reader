@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
@@ -10,7 +11,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_colors.dart';
 import '../../data/services/reading_store.dart';
 import '../../providers/annotation_provider.dart';
+import '../../providers/reading_settings.dart';
+import '../../providers/study_timer.dart';
 import '../widgets/drawing_canvas.dart';
+import '../widgets/side_panel.dart';
 import '../widgets/toolbar_widget.dart';
 
 class ReaderScreen extends StatefulWidget {
@@ -24,12 +28,18 @@ class ReaderScreen extends StatefulWidget {
 
 class _ReaderScreenState extends State<ReaderScreen>
     with WidgetsBindingObserver {
+  static const _lightText = Color(0xFFEFE6DF);
+
   final _controller = PdfViewerController();
   final _searchField = TextEditingController();
   final _page = ValueNotifier<int>(1);
   final _pageCount = ValueNotifier<int>(0);
+
+  late final ReadingSettings _settings;
+  late final StudyTimer _timer;
   late final PdfTextSearcher _searcher;
-  late final PdfViewerParams _params;
+  late final List<PdfViewerPagePaintCallback> _paintCallbacks;
+  late PdfViewerParams _params;
 
   Timer? _saveTimer;
   Timer? _searchTimer;
@@ -40,6 +50,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   Set<int> _bookmarks = {};
   bool _canSave = false;
   bool _searching = false;
+  bool _panelOpen = false;
 
   String get _title => p.basenameWithoutExtension(widget.path);
 
@@ -48,23 +59,19 @@ class _ReaderScreenState extends State<ReaderScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
+    _settings = context.read<ReadingSettings>();
+    _timer = context.read<StudyTimer>();
+
     _searcher = PdfTextSearcher(_controller)..addListener(_onSearchChanged);
     _controller.addListener(_scheduleSave);
 
-    _params = PdfViewerParams(
-      backgroundColor: AppColors.brownSurface,
-      margin: 8,
-      textSelectionParams: const PdfTextSelectionParams(enabled: true),
-      matchTextColor: const Color(0x66F9A825),
-      activeMatchTextColor: const Color(0x99EF6C00),
-      pagePaintCallbacks: [_searcher.pageTextMatchPaintCallback],
-      pageOverlaysBuilder: (context, pageRect, page) => [
-        PageStrokesLayer(pageIndex: page.pageNumber - 1),
-      ],
-      calculateInitialPageNumber: (document, controller) => _saved?.page,
-      onViewerReady: _onViewerReady,
-      onPageChanged: _onPageChanged,
-    );
+    _paintCallbacks = [
+      _settings.paintGrain,
+      _searcher.pageTextMatchPaintCallback,
+    ];
+    _params = _buildParams();
+    _settings.addListener(_onSettings);
+    _timer.onPhaseFinished = _onTimerDone;
 
     _init();
   }
@@ -89,6 +96,10 @@ class _ReaderScreenState extends State<ReaderScreen>
     _searchTimer?.cancel();
     _saveProgress();
     _controller.removeListener(_scheduleSave);
+    _settings.removeListener(_onSettings);
+    if (_timer.onPhaseFinished == _onTimerDone) {
+      _timer.onPhaseFinished = null;
+    }
     _searcher.removeListener(_onSearchChanged);
     _searcher.dispose();
     _searchField.dispose();
@@ -104,6 +115,46 @@ class _ReaderScreenState extends State<ReaderScreen>
         state == AppLifecycleState.inactive) {
       _saveProgress();
     }
+  }
+
+  // ---- Viewer params ------------------------------------------------------
+
+  PdfViewerParams _buildParams() => PdfViewerParams(
+        backgroundColor: _settings.viewerBackground,
+        margin: 8,
+        pageImageColorFilter: _settings.pageFilter,
+        textSelectionParams: const PdfTextSelectionParams(enabled: true),
+        matchTextColor: const Color(0x66F9A825),
+        activeMatchTextColor: const Color(0x99EF6C00),
+        pagePaintCallbacks: _paintCallbacks,
+        pageOverlaysBuilder: _buildOverlays,
+        calculateInitialPageNumber: _initialPage,
+        onViewerReady: _onViewerReady,
+        onPageChanged: _onPageChanged,
+      );
+
+  List<Widget> _buildOverlays(
+          BuildContext context, Rect pageRect, PdfPage page) =>
+      [PageStrokesLayer(pageIndex: page.pageNumber - 1)];
+
+  int? _initialPage(PdfDocument document, PdfViewerController controller) =>
+      _saved?.page;
+
+  void _onSettings() {
+    if (!mounted) return;
+    setState(() => _params = _buildParams());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _controller.isReady) _controller.invalidate();
+    });
+  }
+
+  void _onTimerDone(TimerPhase next) {
+    if (!mounted) return;
+    final message = next == TimerPhase.rest
+        ? 'Focus session complete. Take a ${StudyTimer.restMinutes} minute break.'
+        : 'Break is over. Ready for the next session?';
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   // ---- Auto-resume --------------------------------------------------------
@@ -294,6 +345,21 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   // ---- UI -----------------------------------------------------------------
 
+  ThemeData _darkChrome(ThemeData base) => base.copyWith(
+        scaffoldBackgroundColor: const Color(0xFF0F0C0A),
+        appBarTheme: base.appBarTheme.copyWith(
+          backgroundColor: const Color(0xFF1B1411),
+          foregroundColor: _lightText,
+          iconTheme: const IconThemeData(color: _lightText),
+          actionsIconTheme: const IconThemeData(color: _lightText),
+          titleTextStyle: const TextStyle(
+            color: _lightText,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+
   Widget _titleText() => Text(
         _title,
         maxLines: 1,
@@ -317,49 +383,122 @@ class _ReaderScreenState extends State<ReaderScreen>
         final drawing =
             context.select<AnnotationProvider, bool>((a) => a.drawing);
         final hand = context.select<AnnotationProvider, bool>((a) => a.hand);
+        final dark = _settings.mode == ReadingMode.dark;
+        final base = Theme.of(context);
+        final panelWidth =
+            math.min(300.0, MediaQuery.sizeOf(context).width * 0.84);
 
-        return PopScope(
-          canPop: !drawing && !_searching,
-          onPopInvokedWithResult: (didPop, _) {
-            if (didPop) return;
-            if (_searching) {
-              _closeSearch();
-            } else {
-              annotations.setDrawing(false);
-            }
-          },
-          child: Scaffold(
-            appBar: _searching ? _buildSearchBar() : _buildBar(drawing),
-            body: Stack(
-              children: [
-                Positioned.fill(
-                  child: PdfViewer.file(
-                    widget.path,
-                    key: ValueKey(widget.path),
-                    controller: _controller,
-                    params: _params,
-                  ),
-                ),
-                if (drawing && !hand)
+        return Theme(
+          data: dark ? _darkChrome(base) : base,
+          child: PopScope(
+            canPop: !drawing && !_searching && !_panelOpen,
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) return;
+              if (_panelOpen) {
+                setState(() => _panelOpen = false);
+              } else if (_searching) {
+                _closeSearch();
+              } else {
+                annotations.setDrawing(false);
+              }
+            },
+            child: Scaffold(
+              appBar: _searching
+                  ? _buildSearchBar(dark)
+                  : _buildBar(drawing, dark),
+              body: Stack(
+                children: [
                   Positioned.fill(
-                    child: InkInputLayer(controller: _controller),
+                    child: PdfViewer.file(
+                      widget.path,
+                      key: ValueKey(widget.path),
+                      controller: _controller,
+                      params: _params,
+                    ),
                   ),
-                Positioned(
-                  bottom: 16,
-                  left: 0,
-                  right: 0,
-                  child: Center(child: _buildPagePill()),
-                ),
-              ],
+                  if (drawing && !hand)
+                    Positioned.fill(
+                      child: InkInputLayer(controller: _controller),
+                    ),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: TimerPill(
+                      onTap: () => setState(() => _panelOpen = true),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 16,
+                    left: 0,
+                    right: 0,
+                    child: Center(child: _buildPagePill()),
+                  ),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    top: 0,
+                    bottom: 0,
+                    width: 26,
+                    right: _panelOpen ? panelWidth : 0,
+                    child: Center(child: _buildHandle()),
+                  ),
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    top: 0,
+                    bottom: 0,
+                    width: panelWidth,
+                    right: _panelOpen ? 0 : -panelWidth,
+                    child: SidePanel(
+                      annotating: drawing,
+                      onClose: () => setState(() => _panelOpen = false),
+                      onSearch: () => setState(() {
+                        _panelOpen = false;
+                        _searching = true;
+                      }),
+                      onBookmarks: () {
+                        setState(() => _panelOpen = false);
+                        _showBookmarks();
+                      },
+                      onAnnotate: () {
+                        setState(() => _panelOpen = false);
+                        annotations.setDrawing(!drawing);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              bottomNavigationBar: drawing ? const AnnotationToolbar() : null,
             ),
-            bottomNavigationBar: drawing ? const AnnotationToolbar() : null,
           ),
         );
       }),
     );
   }
 
-  AppBar _buildBar(bool drawing) {
+  Widget _buildHandle() {
+    const radius = BorderRadius.horizontal(left: Radius.circular(12));
+    return Material(
+      color: AppColors.brown.withValues(alpha: 0.85),
+      borderRadius: radius,
+      child: InkWell(
+        borderRadius: radius,
+        onTap: () => setState(() => _panelOpen = !_panelOpen),
+        child: SizedBox(
+          width: 26,
+          height: 64,
+          child: Icon(
+            _panelOpen
+                ? Icons.chevron_right_rounded
+                : Icons.chevron_left_rounded,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
+
+  AppBar _buildBar(bool drawing, bool dark) {
     final annotations = _annotations!;
     return AppBar(
       titleSpacing: 0,
@@ -380,7 +519,9 @@ class _ReaderScreenState extends State<ReaderScreen>
                 marked
                     ? Icons.bookmark_rounded
                     : Icons.bookmark_border_rounded,
-                color: marked ? AppColors.brown : null,
+                color: marked
+                    ? (dark ? AppColors.brownLight : AppColors.brown)
+                    : null,
               ),
               onPressed: () => _toggleBookmark(page),
             );
@@ -394,7 +535,7 @@ class _ReaderScreenState extends State<ReaderScreen>
           onPressed: () => annotations.setDrawing(!drawing),
           style: IconButton.styleFrom(
             backgroundColor: drawing ? AppColors.brown : null,
-            foregroundColor: drawing ? Colors.white : AppColors.brownDark,
+            foregroundColor: drawing ? Colors.white : null,
           ),
         ),
         PopupMenuButton<String>(
@@ -410,7 +551,8 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
-  AppBar _buildSearchBar() {
+  AppBar _buildSearchBar(bool dark) {
+    final textColor = dark ? _lightText : null;
     return AppBar(
       titleSpacing: 0,
       leading: IconButton(
@@ -422,6 +564,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         autofocus: true,
         textInputAction: TextInputAction.search,
         onChanged: _onSearchTyped,
+        style: TextStyle(color: textColor),
         decoration: const InputDecoration(
           hintText: 'Search in document',
           border: InputBorder.none,
@@ -434,8 +577,8 @@ class _ReaderScreenState extends State<ReaderScreen>
         Center(
           child: Text(
             _searchStatus,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
+            style: TextStyle(
+              color: dark ? _lightText : AppColors.textSecondary,
               fontWeight: FontWeight.w700,
             ),
           ),
