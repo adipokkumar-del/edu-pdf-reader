@@ -1,3 +1,4 @@
+
 import 'dart:io';
 import 'dart:ui' as ui;
 
@@ -39,7 +40,7 @@ abstract final class ExportService {
         height: h,
         fullWidth: w.toDouble(),
         fullHeight: h.toDouble(),
-        backgroundColor: const ui.Color(0xFFFFFFFF),
+        backgroundColor: 0xFFFFFFFF,
       );
       if (rendered == null) continue;
 
