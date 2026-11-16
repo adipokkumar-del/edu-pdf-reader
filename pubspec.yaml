@@ -12,6 +12,8 @@ dependencies:
 
   # PDF rendering, search, text selection
   pdfrx: ^2.4.2
+  # Export annotated pages as a new PDF
+  pdf: ^3.11.1
 
   # File access
   path_provider: ^2.1.4
