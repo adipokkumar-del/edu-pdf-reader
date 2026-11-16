@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../providers/reading_settings.dart';
 import '../../providers/study_timer.dart';
+import 'focus_tile.dart';
 
 String _clock(int seconds) {
   String two(int n) => n.toString().padLeft(2, '0');
@@ -169,6 +170,9 @@ class SidePanel extends StatelessWidget {
               const Divider(height: 28),
               const _Heading('Study timer'),
               const _TimerSection(),
+              const Divider(height: 28),
+              const _Heading('Focus'),
+              const FocusTile(),
             ],
           ),
         ),
