@@ -5,7 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/models/annotation_model.dart';
 
-enum AnnotTool { pen, highlighter, eraser }
+enum AnnotTool { ball, fine, marker, highlighter, eraser }
+
+class BrushSpec {
+  const BrushSpec(this.width, this.opacity);
+
+  /// Fraction of page width.
+  final double width;
+  final double opacity;
+}
 
 /// The stroke being drawn right now. Painters listen to it directly,
 /// so drawing never rebuilds the rest of the UI.
@@ -36,17 +44,25 @@ class LiveStroke extends ChangeNotifier {
 class AnnotationProvider extends ChangeNotifier {
   AnnotationProvider(this._prefs, this.path) {
     _load();
+    _loadInk();
   }
 
-  static const palette = [
-    Color(0xFF6D4C41),
+  static const brushes = <AnnotTool, BrushSpec>{
+    AnnotTool.ball: BrushSpec(0.0042, 1.0),
+    AnnotTool.fine: BrushSpec(0.0022, 1.0),
+    AnnotTool.marker: BrushSpec(0.0085, 0.9),
+    AnnotTool.highlighter: BrushSpec(0.03, 0.35),
+  };
+
+  static const defaultPalette = <Color>[
+    Color(0xFF3E2723),
+    Color(0xFF212121),
     Color(0xFFC62828),
     Color(0xFF1565C0),
+    Color(0xFF2E7D32),
+    Color(0xFFEF6C00),
     Color(0xFFF9A825),
   ];
-
-  static const penWidth = 0.005;
-  static const highlighterWidth = 0.03;
 
   final SharedPreferences _prefs;
   final String path;
@@ -60,16 +76,28 @@ class AnnotationProvider extends ChangeNotifier {
 
   /// While true, one-finger gestures scroll/zoom the PDF instead of drawing.
   bool hand = false;
-  AnnotTool tool = AnnotTool.pen;
-  Color color = palette.first;
+
+  AnnotTool tool = AnnotTool.ball;
+  List<Color> palette = List.of(defaultPalette);
+  int colorIndex = 0;
+  double sizeScale = 1.0;
 
   String get _key => 'annotations:$path';
 
-  double get currentWidth =>
-      tool == AnnotTool.highlighter ? highlighterWidth : penWidth;
+  Color get color => palette[colorIndex];
+  double get currentWidth => (brushes[tool]?.width ?? 0.004) * sizeScale;
+  double get currentOpacity => brushes[tool]?.opacity ?? 1.0;
 
   List<Stroke> strokesFor(int page) => _pages[page] ?? const [];
   bool get canUndo => _undo.isNotEmpty;
+
+  /// Every page that has at least one stroke (0-based page index).
+  Map<int, List<Stroke>> get allStrokes => {
+        for (final e in _pages.entries)
+          if (e.value.isNotEmpty) e.key: List.unmodifiable(e.value),
+      };
+
+  // ---- Mode / tool --------------------------------------------------------
 
   void setDrawing(bool value) {
     drawing = value;
@@ -91,10 +119,28 @@ class AnnotationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setColor(Color value) {
-    color = value;
+  void setColorIndex(int index) {
+    colorIndex = index;
+    _prefs.setInt('ink_color_index', index);
     notifyListeners();
   }
+
+  void editPaletteColor(int index, Color value) {
+    palette = List.of(palette)..[index] = value;
+    _prefs.setStringList(
+      'ink_palette',
+      [for (final c in palette) '${c.toARGB32()}'],
+    );
+    notifyListeners();
+  }
+
+  void setSize(double value) {
+    sizeScale = value;
+    _prefs.setDouble('ink_size', value);
+    notifyListeners();
+  }
+
+  // ---- Strokes ------------------------------------------------------------
 
   void addStroke(int page, Stroke stroke) {
     _snapshot(page);
@@ -134,6 +180,21 @@ class AnnotationProvider extends ChangeNotifier {
   void _snapshot(int page) {
     _undo.add((page, List.of(strokesFor(page))));
     if (_undo.length > 50) _undo.removeAt(0);
+  }
+
+  // ---- Persistence --------------------------------------------------------
+
+  void _loadInk() {
+    final saved = _prefs.getStringList('ink_palette');
+    if (saved != null && saved.length == defaultPalette.length) {
+      final parsed = [for (final s in saved) int.tryParse(s)];
+      if (!parsed.contains(null)) {
+        palette = [for (final v in parsed) Color(v!)];
+      }
+    }
+    colorIndex = (_prefs.getInt('ink_color_index') ?? 0)
+        .clamp(0, defaultPalette.length - 1);
+    sizeScale = (_prefs.getDouble('ink_size') ?? 1.0).clamp(0.5, 2.5);
   }
 
   void _load() {
