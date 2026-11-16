@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -9,11 +10,13 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../data/services/export_service.dart';
 import '../../data/services/reading_store.dart';
 import '../../providers/annotation_provider.dart';
 import '../../providers/reading_settings.dart';
 import '../../providers/study_timer.dart';
 import '../widgets/drawing_canvas.dart';
+import '../widgets/notes_sheet.dart';
 import '../widgets/side_panel.dart';
 import '../widgets/toolbar_widget.dart';
 
@@ -150,11 +153,15 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   void _onTimerDone(TimerPhase next) {
     if (!mounted) return;
-    final message = next == TimerPhase.rest
+    _snack(next == TimerPhase.rest
         ? 'Focus session complete. Take a ${StudyTimer.restMinutes} minute break.'
-        : 'Break is over. Ready for the next session?';
+        : 'Break is over. Ready for the next session?');
+  }
+
+  void _snack(String message) {
     ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   // ---- Auto-resume --------------------------------------------------------
@@ -296,6 +303,99 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
+  // ---- Notes & export -----------------------------------------------------
+
+  void _openNotes() {
+    final store = _store;
+    if (store == null) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: Colors.white,
+      builder: (_) => NotesSheet(
+        store: store,
+        currentPage: () => _page.value,
+      ),
+    );
+  }
+
+  Future<void> _exportPdf() async {
+    final annotations = _annotations;
+    if (annotations == null || !_controller.isReady) return;
+
+    final strokes = annotations.allStrokes;
+    if (strokes.isEmpty) {
+      _snack('Nothing drawn yet, so there is nothing to export.');
+      return;
+    }
+
+    final progress = ValueNotifier<double>(0);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          title: const Text('Preparing PDF…'),
+          content: ValueListenableBuilder<double>(
+            valueListenable: progress,
+            builder: (_, v, __) =>
+                LinearProgressIndicator(value: v == 0 ? null : v),
+          ),
+        ),
+      ),
+    );
+
+    File? file;
+    try {
+      file = await ExportService.annotatedPdf(
+        document: _controller.document,
+        strokes: strokes,
+        title: _title,
+        onProgress: (v) => progress.value = v,
+      );
+    } catch (_) {
+      file = null;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    if (file == null) {
+      _snack('Could not create the PDF. Please try again.');
+      return;
+    }
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: 'application/pdf')],
+      subject: '$_title (annotated)',
+    );
+  }
+
+  Future<void> _exportNotes() async {
+    final store = _store;
+    if (store == null) return;
+
+    final notes = store.loadNotes();
+    final bookmarks = _bookmarks.toList()..sort();
+    if (notes.trim().isEmpty && bookmarks.isEmpty) {
+      _snack('No notes or bookmarks to export yet.');
+      return;
+    }
+
+    final file = await ExportService.notesFile(
+      title: _title,
+      notes: notes,
+      bookmarks: bookmarks,
+    );
+    await Share.shareXFiles(
+      [XFile(file.path, mimeType: 'text/plain')],
+      subject: '$_title (notes)',
+    );
+  }
+
   // ---- Other actions ------------------------------------------------------
 
   Future<void> _goTo() async {
@@ -336,6 +436,8 @@ class _ReaderScreenState extends State<ReaderScreen>
     switch (value) {
       case 'bookmarks':
         _showBookmarks();
+      case 'notes':
+        _openNotes();
       case 'goto':
         _goTo();
       case 'share':
@@ -387,6 +489,11 @@ class _ReaderScreenState extends State<ReaderScreen>
         final base = Theme.of(context);
         final panelWidth =
             math.min(300.0, MediaQuery.sizeOf(context).width * 0.84);
+
+        void closePanelThen(VoidCallback action) {
+          setState(() => _panelOpen = false);
+          action();
+        }
 
         return Theme(
           data: dark ? _darkChrome(base) : base,
@@ -456,14 +563,13 @@ class _ReaderScreenState extends State<ReaderScreen>
                         _panelOpen = false;
                         _searching = true;
                       }),
-                      onBookmarks: () {
-                        setState(() => _panelOpen = false);
-                        _showBookmarks();
-                      },
-                      onAnnotate: () {
-                        setState(() => _panelOpen = false);
-                        annotations.setDrawing(!drawing);
-                      },
+                      onBookmarks: () => closePanelThen(_showBookmarks),
+                      onAnnotate: () => closePanelThen(
+                        () => annotations.setDrawing(!drawing),
+                      ),
+                      onNotes: () => closePanelThen(_openNotes),
+                      onExportPdf: () => closePanelThen(_exportPdf),
+                      onExportNotes: () => closePanelThen(_exportNotes),
                     ),
                   ),
                 ],
@@ -543,8 +649,9 @@ class _ReaderScreenState extends State<ReaderScreen>
           onSelected: _onMenu,
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'bookmarks', child: Text('Bookmarks')),
+            PopupMenuItem(value: 'notes', child: Text('Notes')),
             PopupMenuItem(value: 'goto', child: Text('Go to page')),
-            PopupMenuItem(value: 'share', child: Text('Share')),
+            PopupMenuItem(value: 'share', child: Text('Share PDF')),
           ],
         ),
       ],
