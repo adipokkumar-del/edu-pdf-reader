@@ -52,6 +52,10 @@ jobs:
           flutter create . --platforms=android --project-name edu_pdf_reader --org com.edu
           rm -f test/widget_test.dart
           cp ci/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          MAIN=$(find android/app/src/main -name 'MainActivity.kt' | head -n 1)
+          PKG=$(grep -m1 '^package ' "$MAIN")
+          cp ci/MainActivity.kt "$MAIN"
+          sed -i "1s/.*/$PKG/" "$MAIN"
 
       - name: Install dependencies
         run: flutter pub get
