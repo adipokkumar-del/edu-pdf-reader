@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/utils/stroke_painting.dart';
 import '../../data/models/annotation_model.dart';
 import '../../providers/annotation_provider.dart';
 
@@ -23,7 +24,7 @@ class PageStrokesLayer extends StatelessWidget {
           pageIndex: pageIndex,
           liveColor: a.color,
           liveWidth: a.currentWidth,
-          liveHighlighter: a.tool == AnnotTool.highlighter,
+          liveOpacity: a.currentOpacity,
         ),
       ),
     );
@@ -115,7 +116,7 @@ class _InkInputLayerState extends State<InkInputLayer> {
           points: List.of(a.live.points),
           colorValue: a.color.toARGB32(),
           width: a.currentWidth,
-          highlighter: a.tool == AnnotTool.highlighter,
+          opacity: a.currentOpacity,
         ),
       );
     }
@@ -142,7 +143,7 @@ class _StrokePainter extends CustomPainter {
     required this.pageIndex,
     required this.liveColor,
     required this.liveWidth,
-    required this.liveHighlighter,
+    required this.liveOpacity,
   }) : super(repaint: live);
 
   final List<Stroke> strokes;
@@ -150,43 +151,25 @@ class _StrokePainter extends CustomPainter {
   final int pageIndex;
   final Color liveColor;
   final double liveWidth;
-  final bool liveHighlighter;
+  final double liveOpacity;
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final s in strokes) {
-      _draw(canvas, size, s.points, s.color, s.width, s.highlighter);
+      paintStroke(canvas, size, s);
     }
     if (live.page == pageIndex && live.points.isNotEmpty) {
-      _draw(canvas, size, live.points, liveColor, liveWidth, liveHighlighter);
+      paintStroke(
+        canvas,
+        size,
+        Stroke(
+          points: live.points,
+          colorValue: liveColor.toARGB32(),
+          width: liveWidth,
+          opacity: liveOpacity,
+        ),
+      );
     }
-  }
-
-  void _draw(Canvas canvas, Size size, List<Offset> normalized, Color color,
-      double width, bool highlighter) {
-    final pts = [
-      for (final o in normalized) Offset(o.dx * size.width, o.dy * size.height),
-    ];
-    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-    if (pts.length == 1) {
-      path.lineTo(pts.first.dx + 0.01, pts.first.dy);
-    } else {
-      for (var i = 1; i < pts.length - 1; i++) {
-        final mid = (pts[i] + pts[i + 1]) / 2;
-        path.quadraticBezierTo(pts[i].dx, pts[i].dy, mid.dx, mid.dy);
-      }
-      path.lineTo(pts.last.dx, pts.last.dy);
-    }
-
-    canvas.drawPath(
-      path,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..strokeWidth = width * size.width
-        ..color = highlighter ? color.withValues(alpha: 0.35) : color,
-    );
   }
 
   @override
@@ -195,5 +178,5 @@ class _StrokePainter extends CustomPainter {
       old.pageIndex != pageIndex ||
       old.liveColor != liveColor ||
       old.liveWidth != liveWidth ||
-      old.liveHighlighter != liveHighlighter;
+      old.liveOpacity != liveOpacity;
 }
