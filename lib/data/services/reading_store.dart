@@ -16,7 +16,7 @@ class ReadingPosition {
   final double zoom;
 }
 
-/// Per-document reading position and bookmarks.
+/// Per-document reading position, bookmarks and notes.
 class ReadingStore {
   ReadingStore(this._prefs, this.path);
 
@@ -25,6 +25,7 @@ class ReadingStore {
 
   String get _positionKey => 'position:$path';
   String get _bookmarksKey => 'bookmarks:$path';
+  String get _notesKey => 'notes:$path';
 
   ReadingPosition? loadPosition() {
     final raw = _prefs.getString(_positionKey);
@@ -59,5 +60,15 @@ class ReadingStore {
 
   void saveBookmarks(Iterable<int> pages) {
     _prefs.setStringList(_bookmarksKey, [for (final p in pages) '$p']);
+  }
+
+  String loadNotes() => _prefs.getString(_notesKey) ?? '';
+
+  void saveNotes(String text) {
+    if (text.isEmpty) {
+      _prefs.remove(_notesKey);
+    } else {
+      _prefs.setString(_notesKey, text);
+    }
   }
 }
