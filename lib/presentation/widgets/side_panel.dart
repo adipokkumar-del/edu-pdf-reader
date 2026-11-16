@@ -19,6 +19,9 @@ class SidePanel extends StatelessWidget {
     required this.onSearch,
     required this.onBookmarks,
     required this.onAnnotate,
+    required this.onNotes,
+    required this.onExportPdf,
+    required this.onExportNotes,
   });
 
   final bool annotating;
@@ -26,6 +29,9 @@ class SidePanel extends StatelessWidget {
   final VoidCallback onSearch;
   final VoidCallback onBookmarks;
   final VoidCallback onAnnotate;
+  final VoidCallback onNotes;
+  final VoidCallback onExportPdf;
+  final VoidCallback onExportNotes;
 
   static const _modeLabels = {
     ReadingMode.normal: 'Normal',
@@ -97,6 +103,23 @@ class SidePanel extends StatelessWidget {
                 icon: Icons.bookmarks_outlined,
                 label: 'Bookmarks',
                 onTap: onBookmarks,
+              ),
+              _ActionTile(
+                icon: Icons.sticky_note_2_outlined,
+                label: 'Notes',
+                onTap: onNotes,
+              ),
+              const Divider(height: 28),
+              const _Heading('Export'),
+              _ActionTile(
+                icon: Icons.picture_as_pdf_outlined,
+                label: 'Share annotated PDF',
+                onTap: onExportPdf,
+              ),
+              _ActionTile(
+                icon: Icons.text_snippet_outlined,
+                label: 'Share notes (.txt)',
+                onTap: onExportNotes,
               ),
               const Divider(height: 28),
               const _Heading('Display'),
