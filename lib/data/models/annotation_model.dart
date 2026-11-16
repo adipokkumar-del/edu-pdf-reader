@@ -5,16 +5,16 @@ class Stroke {
     required this.points,
     required this.colorValue,
     required this.width,
-    this.highlighter = false,
+    this.opacity = 1.0,
   });
 
   /// Points normalized to the page (0..1 on both axes), so strokes survive zooming.
   final List<Offset> points;
   final int colorValue;
 
-  /// Stroke width as a fraction of the page width.
+  /// Stroke width as a fraction of page width.
   final double width;
-  final bool highlighter;
+  final double opacity;
 
   Color get color => Color(colorValue);
 
@@ -31,7 +31,7 @@ class Stroke {
   Map<String, dynamic> toJson() => {
         'c': colorValue,
         'w': width,
-        'h': highlighter,
+        'o': opacity,
         'p': [
           for (final o in points) ...[_round(o.dx), _round(o.dy)],
         ],
@@ -39,6 +39,7 @@ class Stroke {
 
   factory Stroke.fromJson(Map<String, dynamic> json) {
     final flat = (json['p'] as List).cast<num>();
+    final legacyHighlighter = json['h'] as bool? ?? false;
     return Stroke(
       points: [
         for (var i = 0; i + 1 < flat.length; i += 2)
@@ -46,7 +47,8 @@ class Stroke {
       ],
       colorValue: json['c'] as int,
       width: (json['w'] as num).toDouble(),
-      highlighter: json['h'] as bool? ?? false,
+      opacity:
+          (json['o'] as num?)?.toDouble() ?? (legacyHighlighter ? 0.35 : 1.0),
     );
   }
 
