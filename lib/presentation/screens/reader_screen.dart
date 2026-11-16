@@ -13,8 +13,10 @@ import '../../core/constants/app_colors.dart';
 import '../../data/services/export_service.dart';
 import '../../data/services/reading_store.dart';
 import '../../providers/annotation_provider.dart';
+import '../../providers/focus_mode.dart';
 import '../../providers/reading_settings.dart';
 import '../../providers/study_timer.dart';
+import '../widgets/double_tap_zoom.dart';
 import '../widgets/drawing_canvas.dart';
 import '../widgets/notes_sheet.dart';
 import '../widgets/side_panel.dart';
@@ -40,6 +42,7 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   late final ReadingSettings _settings;
   late final StudyTimer _timer;
+  late final FocusMode _focus;
   late final PdfTextSearcher _searcher;
   late final List<PdfViewerPagePaintCallback> _paintCallbacks;
   late PdfViewerParams _params;
@@ -64,6 +67,8 @@ class _ReaderScreenState extends State<ReaderScreen>
 
     _settings = context.read<ReadingSettings>();
     _timer = context.read<StudyTimer>();
+    _focus = context.read<FocusMode>();
+    _focus.enterReader();
 
     _searcher = PdfTextSearcher(_controller)..addListener(_onSearchChanged);
     _controller.addListener(_scheduleSave);
@@ -109,6 +114,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     _page.dispose();
     _pageCount.dispose();
     _annotations?.dispose();
+    _focus.leaveReader();
     super.dispose();
   }
 
@@ -526,6 +532,10 @@ class _ReaderScreenState extends State<ReaderScreen>
                   if (drawing && !hand)
                     Positioned.fill(
                       child: InkInputLayer(controller: _controller),
+                    ),
+                  if (!drawing)
+                    Positioned.fill(
+                      child: DoubleTapDragZoom(controller: _controller),
                     ),
                   Positioned(
                     top: 8,
