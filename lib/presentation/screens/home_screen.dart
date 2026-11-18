@@ -5,6 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../providers/library_provider.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/pdf_file_tile.dart';
+import '../widgets/recent_strip.dart';
 import 'reader_screen.dart';
 
 class HomeScreen extends StatefulWidget {
