@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +16,7 @@ import '../../data/services/reading_store.dart';
 import '../../providers/annotation_provider.dart';
 import '../../providers/focus_mode.dart';
 import '../../providers/reading_settings.dart';
+import '../../providers/recent_provider.dart';
 import '../../providers/study_timer.dart';
 import '../widgets/double_tap_zoom.dart';
 import '../widgets/drawing_canvas.dart';
@@ -34,6 +36,7 @@ class ReaderScreen extends StatefulWidget {
 class _ReaderScreenState extends State<ReaderScreen>
     with WidgetsBindingObserver {
   static const _lightText = Color(0xFFEFE6DF);
+  static const _baseFriction = 0.0000135;
 
   final _controller = PdfViewerController();
   final _searchField = TextEditingController();
@@ -43,6 +46,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   late final ReadingSettings _settings;
   late final StudyTimer _timer;
   late final FocusMode _focus;
+  late final RecentProvider _recent;
   late final PdfTextSearcher _searcher;
   late final List<PdfViewerPagePaintCallback> _paintCallbacks;
   late PdfViewerParams _params;
@@ -53,10 +57,12 @@ class _ReaderScreenState extends State<ReaderScreen>
   ReadingStore? _store;
   AnnotationProvider? _annotations;
   ReadingPosition? _saved;
+  ReadingPosition? _pending;
   Set<int> _bookmarks = {};
   bool _canSave = false;
   bool _searching = false;
   bool _panelOpen = false;
+  bool _fullscreen = false;
 
   String get _title => p.basenameWithoutExtension(widget.path);
 
@@ -68,10 +74,11 @@ class _ReaderScreenState extends State<ReaderScreen>
     _settings = context.read<ReadingSettings>();
     _timer = context.read<StudyTimer>();
     _focus = context.read<FocusMode>();
+    _recent = context.read<RecentProvider>();
     _focus.enterReader();
 
     _searcher = PdfTextSearcher(_controller)..addListener(_onSearchChanged);
-    _controller.addListener(_scheduleSave);
+    _controller.addListener(_onViewerMoved);
 
     _paintCallbacks = [
       _settings.paintGrain,
@@ -80,6 +87,10 @@ class _ReaderScreenState extends State<ReaderScreen>
     _params = _buildParams();
     _settings.addListener(_onSettings);
     _timer.onPhaseFinished = _onTimerDone;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _recent.touch(widget.path);
+    });
 
     _init();
   }
@@ -103,7 +114,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     _saveTimer?.cancel();
     _searchTimer?.cancel();
     _saveProgress();
-    _controller.removeListener(_scheduleSave);
+    _controller.removeListener(_onViewerMoved);
     _settings.removeListener(_onSettings);
     if (_timer.onPhaseFinished == _onTimerDone) {
       _timer.onPhaseFinished = null;
@@ -115,6 +126,9 @@ class _ReaderScreenState extends State<ReaderScreen>
     _pageCount.dispose();
     _annotations?.dispose();
     _focus.leaveReader();
+    if (_fullscreen) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    }
     super.dispose();
   }
 
@@ -128,10 +142,15 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   // ---- Viewer params ------------------------------------------------------
 
+  /// Higher speed = less friction, so a flick travels further.
+  double _friction(double speed) =>
+      math.pow(_baseFriction, 1 / speed).toDouble();
+
   PdfViewerParams _buildParams() => PdfViewerParams(
         backgroundColor: _settings.viewerBackground,
         margin: 8,
         pageImageColorFilter: _settings.pageFilter,
+        interactionEndFrictionCoefficient: _friction(_settings.scrollSpeed),
         textSelectionParams: const PdfTextSelectionParams(enabled: true),
         matchTextColor: const Color(0x66F9A825),
         activeMatchTextColor: const Color(0x99EF6C00),
@@ -172,23 +191,71 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   // ---- Auto-resume --------------------------------------------------------
 
+  /// Where the top of the screen is right now, relative to its page.
+  ReadingPosition? _capture() {
+    if (!_controller.isReady) return null;
+    try {
+      final rects = _controller.layout.pageLayouts;
+      if (rects.isEmpty) return null;
+      final view = _controller.visibleRect;
+
+      // First page whose bottom edge is below the top of the screen.
+      var lo = 0;
+      var hi = rects.length - 1;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (rects[mid].bottom > view.top) {
+          hi = mid;
+        } else {
+          lo = mid + 1;
+        }
+      }
+      final r = rects[lo];
+      return ReadingPosition(
+        page: lo + 1,
+        fx: (view.left - r.left) / r.width,
+        fy: (view.top - r.top) / r.height,
+        zoom: _controller.currentZoom,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _onViewerReady(
     PdfDocument document,
     PdfViewerController controller,
   ) async {
-    final saved = _saved;
-    if (saved != null && saved.zoom > 0) {
-      try {
-        await controller.goToPosition(
-          documentOffset: Offset(saved.x, saved.y),
-          zoom: saved.zoom,
-        );
-      } catch (_) {}
-    }
-    _canSave = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _pageCount.value = controller.pageCount;
     });
+
+    final saved = _saved;
+    if (saved != null) {
+      // Pages are measured gradually, so wait, jump, and verify a few times.
+      for (var attempt = 0; attempt < 3; attempt++) {
+        await Future<void>.delayed(
+          Duration(milliseconds: attempt == 0 ? 350 : 300),
+        );
+        if (!mounted || !controller.isReady) break;
+        try {
+          final rects = controller.layout.pageLayouts;
+          final i = saved.page - 1;
+          if (i < 0 || i >= rects.length) break;
+          final r = rects[i];
+          await controller.goToPosition(
+            documentOffset: Offset(
+              r.left + saved.fx * r.width,
+              r.top + saved.fy * r.height,
+            ),
+            zoom: saved.zoom > 0 ? saved.zoom : null,
+          );
+        } catch (_) {}
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        if (_capture()?.page == saved.page) break;
+      }
+    }
+    if (mounted) _canSave = true;
   }
 
   void _onPageChanged(int? number) {
@@ -198,23 +265,23 @@ class _ReaderScreenState extends State<ReaderScreen>
     });
   }
 
-  void _scheduleSave() {
+  void _onViewerMoved() {
+    if (!_canSave) return;
+    final position = _capture();
+    if (position != null) _pending = position;
     _saveTimer?.cancel();
-    _saveTimer = Timer(const Duration(milliseconds: 500), _saveProgress);
+    _saveTimer = Timer(const Duration(milliseconds: 500), _flush);
+  }
+
+  void _flush() {
+    final position = _pending;
+    if (position != null) _store?.savePosition(position);
   }
 
   void _saveProgress() {
-    final store = _store;
-    if (store == null || !_canSave || !_controller.isReady) return;
-    try {
-      final top = _controller.visibleRect.topLeft;
-      store.savePosition(ReadingPosition(
-        page: _controller.pageNumber ?? _page.value,
-        x: top.dx,
-        y: top.dy,
-        zoom: _controller.currentZoom,
-      ));
-    } catch (_) {}
+    if (!_canSave) return;
+    final position = _capture() ?? _pending;
+    if (position != null) _store?.savePosition(position);
   }
 
   // ---- Search -------------------------------------------------------------
@@ -309,7 +376,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
-  // ---- Notes & export -----------------------------------------------------
+  // ---- Notes, text & export -----------------------------------------------
 
   void _openNotes() {
     final store = _store;
@@ -325,6 +392,46 @@ class _ReaderScreenState extends State<ReaderScreen>
         currentPage: () => _page.value,
       ),
     );
+  }
+
+  void _appendToNotes(String text) {
+    final store = _store;
+    if (store == null) return;
+    final old = store.loadNotes();
+    store.saveNotes(old.isEmpty ? text : '$old\n\n$text');
+    _snack('Added to notes');
+  }
+
+  /// Copies the whole text of the current page to the clipboard.
+  Future<void> _extractText() async {
+    if (!_controller.isReady) return;
+    final n = _page.value;
+    var text = '';
+    try {
+      final page = _controller.document.pages[n - 1];
+      final dynamic loaded = await page.loadText();
+      text = ((loaded?.fullText as String?) ?? '').trim();
+    } catch (_) {}
+
+    if (!mounted) return;
+    if (text.isEmpty) {
+      _snack('No selectable text on page $n. It may be a scanned image.');
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Page $n text copied (${text.length} characters)'),
+          action: SnackBarAction(
+            label: 'Add to notes',
+            onPressed: () => _appendToNotes('[p. $n]\n$text'),
+          ),
+        ),
+      );
   }
 
   Future<void> _exportPdf() async {
@@ -404,6 +511,13 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   // ---- Other actions ------------------------------------------------------
 
+  void _toggleFullscreen() {
+    setState(() => _fullscreen = !_fullscreen);
+    SystemChrome.setEnabledSystemUIMode(
+      _fullscreen ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+    );
+  }
+
   Future<void> _goTo() async {
     final controller = TextEditingController();
     final total = _pageCount.value;
@@ -444,6 +558,10 @@ class _ReaderScreenState extends State<ReaderScreen>
         _showBookmarks();
       case 'notes':
         _openNotes();
+      case 'extract':
+        _extractText();
+      case 'fullscreen':
+        _toggleFullscreen();
       case 'goto':
         _goTo();
       case 'share':
@@ -492,6 +610,7 @@ class _ReaderScreenState extends State<ReaderScreen>
             context.select<AnnotationProvider, bool>((a) => a.drawing);
         final hand = context.select<AnnotationProvider, bool>((a) => a.hand);
         final dark = _settings.mode == ReadingMode.dark;
+        final left = _settings.panelLeft;
         final base = Theme.of(context);
         final panelWidth =
             math.min(300.0, MediaQuery.sizeOf(context).width * 0.84);
@@ -504,13 +623,15 @@ class _ReaderScreenState extends State<ReaderScreen>
         return Theme(
           data: dark ? _darkChrome(base) : base,
           child: PopScope(
-            canPop: !drawing && !_searching && !_panelOpen,
+            canPop: !drawing && !_searching && !_panelOpen && !_fullscreen,
             onPopInvokedWithResult: (didPop, _) {
               if (didPop) return;
               if (_panelOpen) {
                 setState(() => _panelOpen = false);
               } else if (_searching) {
                 _closeSearch();
+              } else if (_fullscreen) {
+                _toggleFullscreen();
               } else {
                 annotations.setDrawing(false);
               }
@@ -518,7 +639,7 @@ class _ReaderScreenState extends State<ReaderScreen>
             child: Scaffold(
               appBar: _searching
                   ? _buildSearchBar(dark)
-                  : _buildBar(drawing, dark),
+                  : (_fullscreen ? null : _buildBar(drawing, dark)),
               body: Stack(
                 children: [
                   Positioned.fill(
@@ -544,6 +665,21 @@ class _ReaderScreenState extends State<ReaderScreen>
                       onTap: () => setState(() => _panelOpen = true),
                     ),
                   ),
+                  if (_fullscreen)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: IconButton.filled(
+                        tooltip: 'Exit full screen',
+                        onPressed: _toggleFullscreen,
+                        icon: const Icon(Icons.fullscreen_exit_rounded),
+                        style: IconButton.styleFrom(
+                          backgroundColor:
+                              AppColors.brownDark.withValues(alpha: 0.75),
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ),
                   Positioned(
                     bottom: 16,
                     left: 0,
@@ -551,21 +687,25 @@ class _ReaderScreenState extends State<ReaderScreen>
                     child: Center(child: _buildPagePill()),
                   ),
                   AnimatedPositioned(
+                    key: ValueKey('handle-$left'),
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
                     top: 0,
                     bottom: 0,
                     width: 26,
-                    right: _panelOpen ? panelWidth : 0,
-                    child: Center(child: _buildHandle()),
+                    left: left ? (_panelOpen ? panelWidth : 0) : null,
+                    right: left ? null : (_panelOpen ? panelWidth : 0),
+                    child: Center(child: _buildHandle(left)),
                   ),
                   AnimatedPositioned(
+                    key: ValueKey('panel-$left'),
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutCubic,
                     top: 0,
                     bottom: 0,
                     width: panelWidth,
-                    right: _panelOpen ? 0 : -panelWidth,
+                    left: left ? (_panelOpen ? 0 : -panelWidth) : null,
+                    right: left ? null : (_panelOpen ? 0 : -panelWidth),
                     child: SidePanel(
                       annotating: drawing,
                       onClose: () => setState(() => _panelOpen = false),
@@ -580,6 +720,8 @@ class _ReaderScreenState extends State<ReaderScreen>
                       onNotes: () => closePanelThen(_openNotes),
                       onExportPdf: () => closePanelThen(_exportPdf),
                       onExportNotes: () => closePanelThen(_exportNotes),
+                      onExtractText: () => closePanelThen(_extractText),
+                      onFullscreen: () => closePanelThen(_toggleFullscreen),
                     ),
                   ),
                 ],
@@ -592,19 +734,27 @@ class _ReaderScreenState extends State<ReaderScreen>
     );
   }
 
-  Widget _buildHandle() {
-    const radius = BorderRadius.horizontal(left: Radius.circular(12));
+  Widget _buildHandle(bool left) {
+    final radius = left
+        ? const BorderRadius.horizontal(right: Radius.circular(12))
+        : const BorderRadius.horizontal(left: Radius.circular(12));
+    final pointsInward = left ? !_panelOpen : _panelOpen;
+
     return Material(
       color: AppColors.brown.withValues(alpha: 0.85),
       borderRadius: radius,
       child: InkWell(
         borderRadius: radius,
         onTap: () => setState(() => _panelOpen = !_panelOpen),
+        onLongPress: () {
+          HapticFeedback.mediumImpact();
+          _settings.setPanelLeft(!left);
+        },
         child: SizedBox(
           width: 26,
           height: 64,
           child: Icon(
-            _panelOpen
+            pointsInward
                 ? Icons.chevron_right_rounded
                 : Icons.chevron_left_rounded,
             color: Colors.white,
@@ -658,6 +808,8 @@ class _ReaderScreenState extends State<ReaderScreen>
           color: Colors.white,
           onSelected: _onMenu,
           itemBuilder: (_) => const [
+            PopupMenuItem(value: 'extract', child: Text('Extract page text')),
+            PopupMenuItem(value: 'fullscreen', child: Text('Full screen')),
             PopupMenuItem(value: 'bookmarks', child: Text('Bookmarks')),
             PopupMenuItem(value: 'notes', child: Text('Notes')),
             PopupMenuItem(value: 'goto', child: Text('Go to page')),
