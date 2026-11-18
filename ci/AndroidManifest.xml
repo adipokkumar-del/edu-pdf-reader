@@ -19,7 +19,25 @@
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
 
-        <activity
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="*/*" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.edunote" />
+                <data android:pathPattern=".*\\..*\\.edunote" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/x-edunote" />
+            </intent-filter>
+        </activity>
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
