@@ -5,22 +5,28 @@ import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 /// One-finger zoom: double-tap and keep the finger down, then drag.
-/// Drag down to zoom in, up to zoom out. A plain double-tap steps the zoom.
+/// Drag down to zoom in, up to zoom out. A plain double-tap steps the zoom,
+/// and a single tap (no second tap within a moment) calls [onSingleTap].
 ///
 /// It sits above the viewer. Normally it only watches touches (translucent),
 /// so scrolling, pinching and text selection keep working. For a split second
 /// after a first tap it captures touches to catch the second one.
 class DoubleTapDragZoom extends StatefulWidget {
-  const DoubleTapDragZoom({super.key, required this.controller});
+  const DoubleTapDragZoom({
+    super.key,
+    required this.controller,
+    this.onSingleTap,
+  });
 
   final PdfViewerController controller;
+  final VoidCallback? onSingleTap;
 
   @override
   State<DoubleTapDragZoom> createState() => _DoubleTapDragZoomState();
 }
 
 class _DoubleTapDragZoomState extends State<DoubleTapDragZoom> {
-  static const _window = Duration(milliseconds: 300);
+  static const _window = Duration(milliseconds: 280);
   static const _tapMax = Duration(milliseconds: 250);
   static const _slop = 18.0;
   static const _near = 60.0;
@@ -51,7 +57,11 @@ class _DoubleTapDragZoomState extends State<DoubleTapDragZoom> {
   void _arm() {
     _timer?.cancel();
     setState(() => _armed = true);
-    _timer = Timer(_window, _disarm);
+    _timer = Timer(_window, () {
+      // No second tap came: this was a single tap.
+      _disarm();
+      widget.onSingleTap?.call();
+    });
   }
 
   void _disarm() {
