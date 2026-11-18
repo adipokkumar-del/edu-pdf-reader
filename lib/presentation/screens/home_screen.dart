@@ -102,6 +102,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
           child: _buildSearchField(library),
         ),
+        const RecentStrip(),
         _buildSortBar(library),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
