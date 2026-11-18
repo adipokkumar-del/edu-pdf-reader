@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/utils/native_bridge.dart';
-import 'presentation/screens/home_screen.dart';
+import 'presentation/screens/main_shell.dart';
 import 'presentation/screens/reader_screen.dart';
 
 class EduPdfApp extends StatefulWidget {
@@ -44,7 +44,7 @@ class _EduPdfAppState extends State<EduPdfApp> {
       navigatorKey: _navigatorKey,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const HomeScreen(),
+      home: const MainShell(),
     );
   }
 }
