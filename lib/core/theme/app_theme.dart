@@ -27,6 +27,15 @@ abstract final class AppTheme {
       scaffoldBackgroundColor: AppColors.background,
       textTheme: textTheme,
       dividerColor: AppColors.divider,
+      scrollbarTheme: ScrollbarThemeData(
+        thumbColor:
+            WidgetStateProperty.all(AppColors.brown.withValues(alpha: 0.35)),
+        thickness: WidgetStateProperty.all(3),
+        radius: const Radius.circular(3),
+        crossAxisMargin: 2,
+        thumbVisibility: WidgetStateProperty.all(false),
+        trackVisibility: WidgetStateProperty.all(false),
+      ),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.background,
         elevation: 0,
