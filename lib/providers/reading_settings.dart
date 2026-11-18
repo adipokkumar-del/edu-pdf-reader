@@ -23,6 +23,9 @@ class ReadingSettings extends ChangeNotifier {
     warmth = _prefs.getDouble('rs_warmth') ?? 0.4;
     brightness = _prefs.getDouble('rs_brightness') ?? 1.0;
     grainStrength = _prefs.getDouble('rs_grain_strength') ?? 0.5;
+    scrollSpeed =
+        (_prefs.getDouble('rs_scroll_speed') ?? 1.7).clamp(1.0, 3.0).toDouble();
+    panelLeft = _prefs.getBool('rs_panel_left') ?? false;
     _buildGrain();
   }
 
@@ -33,6 +36,8 @@ class ReadingSettings extends ChangeNotifier {
   double warmth = 0.4;
   double brightness = 1.0;
   double grainStrength = 0.5;
+  double scrollSpeed = 1.7;
+  bool panelLeft = false;
 
   ui.Image? _grainImage;
 
@@ -71,6 +76,18 @@ class ReadingSettings extends ChangeNotifier {
   }
 
   // ---- Colour filter for the page images ----------------------------------
+
+  void setScrollSpeed(double value) {
+    scrollSpeed = value.clamp(1.0, 3.0).toDouble();
+    _prefs.setDouble('rs_scroll_speed', scrollSpeed);
+    notifyListeners();
+  }
+
+  void setPanelLeft(bool value) {
+    panelLeft = value;
+    _prefs.setBool('rs_panel_left', value);
+    notifyListeners();
+  }
 
   Color get viewerBackground => switch (mode) {
         ReadingMode.normal => const Color(0xFFF3EBE7),
