@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/utils/native_bridge.dart';
+import 'data/services/share_notes.dart';
 import 'presentation/screens/main_shell.dart';
 import 'presentation/screens/reader_screen.dart';
 
@@ -21,7 +22,7 @@ class _EduPdfAppState extends State<EduPdfApp> {
     NativeBridge.onOpenPdf = _open;
     NativeBridge.listen();
 
-    // A PDF that launched the app ("Open with" from a cold start).
+    // A file that launched the app ("Open with" from a cold start).
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final path = await NativeBridge.initialPdf();
       if (path != null) _open(path);
@@ -31,6 +32,14 @@ class _EduPdfAppState extends State<EduPdfApp> {
   void _open(String path) {
     final navigator = _navigatorKey.currentState;
     if (navigator == null) return;
+
+    // A notes file shared from another phone: import it.
+    if (path.toLowerCase().endsWith('.edunote')) {
+      final context = _navigatorKey.currentContext;
+      if (context != null) importNotesFromPath(context, path);
+      return;
+    }
+
     navigator.popUntil((route) => route.isFirst);
     navigator.push(
       MaterialPageRoute(builder: (_) => ReaderScreen(path: path)),
