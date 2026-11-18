@@ -7,10 +7,23 @@ import '../../providers/tasks_provider.dart';
 import '../widgets/empty_state.dart';
 import 'task_editor_screen.dart';
 
-class TasksScreen extends StatelessWidget {
+class TasksScreen extends StatefulWidget {
   const TasksScreen({super.key});
 
-  void _edit(BuildContext context, [TaskModel? task]) {
+  @override
+  State<TasksScreen> createState() => _TasksScreenState();
+}
+
+class _TasksScreenState extends State<TasksScreen> {
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _edit([TaskModel? task]) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => TaskEditorScreen(task: task)),
     );
@@ -19,33 +32,122 @@ class TasksScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<TasksProvider>();
-    final tasks = provider.ordered;
+    final all = provider.tasks;
+    final ordered = provider.ordered;
+
+    final notes = all.where((t) => t.items.isEmpty).length;
+    final lists = all.where((t) => t.items.isNotEmpty).length;
+    final reminders =
+        all.where((t) => !t.completed && t.remindAt != null).length;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Notes & Checklists')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _edit(context),
+        onPressed: _edit,
         backgroundColor: AppColors.brown,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add_rounded),
         label: const Text('New'),
       ),
-      body: tasks.isEmpty
+      body: ordered.isEmpty
           ? const EmptyState(
               icon: Icons.checklist_rounded,
               title: 'Nothing here yet',
               message:
                   'Jot down a note, build a checklist, and set a reminder or alarm.',
             )
-          : ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
-              itemCount: tasks.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (context, i) => _TaskCard(
-                task: tasks[i],
-                onEdit: () => _edit(context, tasks[i]),
+          : Scrollbar(
+              controller: _scroll,
+              child: ListView.separated(
+                controller: _scroll,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+                itemCount: ordered.length + 1,
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, i) {
+                  if (i == 0) {
+                    return _Summary(
+                      notes: notes,
+                      checklists: lists,
+                      reminders: reminders,
+                    );
+                  }
+                  final task = ordered[i - 1];
+                  return _TaskCard(task: task, onEdit: () => _edit(task));
+                },
               ),
             ),
+    );
+  }
+}
+
+class _Summary extends StatelessWidget {
+  const _Summary({
+    required this.notes,
+    required this.checklists,
+    required this.reminders,
+  });
+
+  final int notes;
+  final int checklists;
+  final int reminders;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Row(
+        children: [
+          _Stat(icon: Icons.sticky_note_2_outlined, label: 'Notes', value: notes),
+          _Stat(
+              icon: Icons.checklist_rounded,
+              label: 'Checklists',
+              value: checklists),
+          _Stat(
+              icon: Icons.notifications_active_outlined,
+              label: 'Reminders',
+              value: reminders),
+        ],
+      ),
+    );
+  }
+}
+
+class _Stat extends StatelessWidget {
+  const _Stat({required this.icon, required this.label, required this.value});
+
+  final IconData icon;
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, size: 18, color: AppColors.brown),
+          const SizedBox(height: 4),
+          Text(
+            '$value',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: AppColors.brownDark,
+            ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
