@@ -26,6 +26,10 @@ class ReadingSettings extends ChangeNotifier {
     scrollSpeed =
         (_prefs.getDouble('rs_scroll_speed') ?? 1.7).clamp(1.0, 3.0).toDouble();
     panelLeft = _prefs.getBool('rs_panel_left') ?? false;
+    handleFx = _prefs.getDouble('rs_handle_fx') ?? 1.0;
+    handleFy = _prefs.getDouble('rs_handle_fy') ?? 0.5;
+    scrollSpeed =
+        (_prefs.getDouble('rs_scroll_speed2') ?? 3.0).clamp(1.0, 5.0).toDouble();
     _buildGrain();
   }
 
@@ -38,6 +42,8 @@ class ReadingSettings extends ChangeNotifier {
   double grainStrength = 0.5;
   double scrollSpeed = 1.7;
   bool panelLeft = false;
+  double handleFx = 1.0;
+  double handleFy = 0.5;
 
   ui.Image? _grainImage;
 
@@ -78,9 +84,18 @@ class ReadingSettings extends ChangeNotifier {
   // ---- Colour filter for the page images ----------------------------------
 
   void setScrollSpeed(double value) {
-    scrollSpeed = value.clamp(1.0, 3.0).toDouble();
-    _prefs.setDouble('rs_scroll_speed', scrollSpeed);
+    scrollSpeed = value.clamp(1.0, 5.0).toDouble();
+    _prefs.setDouble('rs_scroll_speed2', scrollSpeed);
     notifyListeners();
+  }
+
+  /// Where the round panel button sits, as fractions of the free area.
+  /// Does not notify: the reader redraws itself after a drag.
+  void setHandle(double fx, double fy) {
+    handleFx = fx.clamp(0.0, 1.0).toDouble();
+    handleFy = fy.clamp(0.0, 1.0).toDouble();
+    _prefs.setDouble('rs_handle_fx', handleFx);
+    _prefs.setDouble('rs_handle_fy', handleFy);
   }
 
   void setPanelLeft(bool value) {
