@@ -125,7 +125,7 @@ class SidePanel extends StatelessWidget {
               ),
               _ActionTile(
                 icon: Icons.text_snippet_outlined,
-                label: 'Share notes (.txt)',
+                label: 'Share notes…',
                 onTap: onExportNotes,
               ),
               const Divider(height: 28),
