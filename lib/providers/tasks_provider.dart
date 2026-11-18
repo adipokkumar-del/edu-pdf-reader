@@ -45,6 +45,29 @@ class TasksProvider extends ChangeNotifier {
     _commit();
   }
 
+  /// Adds notes received from a file: new ids, no reminders.
+  void importAll(List<TaskModel> incoming) {
+    var id = TaskModel.newId();
+    final used = tasks.map((t) => t.id).toSet();
+    for (final t in incoming.reversed) {
+      while (used.contains(id)) {
+        id = (id + 1) % 2000000000;
+      }
+      used.add(id);
+      tasks.insert(
+        0,
+        TaskModel(
+          id: id,
+          title: t.title,
+          body: t.body,
+          items: t.items,
+          completed: t.completed,
+        ),
+      );
+    }
+    _commit();
+  }
+
   void delete(int id) {
     tasks.removeWhere((t) => t.id == id);
     _commit();
