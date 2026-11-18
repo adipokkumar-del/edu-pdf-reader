@@ -15,6 +15,8 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private lateinit var channel: MethodChannel
     private var pendingPath: String? = null
+    private var pickResult: MethodChannel.Result? = null
+    private val pickRequest = 4711
 
     private val nativePrefs by lazy {
         getSharedPreferences("edu_native", Context.MODE_PRIVATE)
@@ -57,6 +59,22 @@ class MainActivity : FlutterActivity() {
                     Reminders.sync(this, call.argument<String>("json") ?: "[]")
                     result.success(true)
                 }
+                "pickFile" -> {
+                    if (pickResult != null) {
+                        result.success(null)
+                    } else {
+                        val pick = Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        pick.addCategory(Intent.CATEGORY_OPENABLE)
+                        pick.type = "*/*"
+                        pickResult = result
+                        try {
+                            startActivityForResult(pick, pickRequest)
+                        } catch (e: Exception) {
+                            pickResult = null
+                            result.success(null)
+                        }
+                    }
+                }
                 "canExactAlarms" -> result.success(Reminders.canExact(this))
                 "openExactAlarmSettings" -> {
                     if (Build.VERSION.SDK_INT >= 31) {
@@ -76,6 +94,26 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == pickRequest) {
+            val pending = pickResult
+            pickResult = null
+            var path: String? = null
+            val uri = data?.data
+            if (resultCode == RESULT_OK && uri != null) {
+                path = try {
+                    materialize(uri)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            pending?.success(path)
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -164,7 +202,8 @@ class MainActivity : FlutterActivity() {
         }
 
         val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-        val finalName = if (safe.lowercase().endsWith(".pdf")) safe else "$safe.pdf"
+        val lower = safe.lowercase()
+        val finalName = if (lower.endsWith(".pdf") || lower.endsWith(".edunote")) safe else "$safe.pdf"
 
         val dir = File(cacheDir, "opened")
         dir.mkdirs()
