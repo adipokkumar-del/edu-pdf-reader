@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/system_ui.dart';
 import '../../data/services/export_service.dart';
+import '../../data/services/share_notes.dart';
 import '../../data/services/reading_store.dart';
 import '../../providers/annotation_provider.dart';
 import '../../providers/focus_mode.dart';
@@ -497,6 +498,19 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _exportNotes() async {
+    final s = _store;
+    if (s == null) return;
+    await shareDocumentNotes(
+      context,
+      title: _title,
+      notes: s.loadNotes(),
+      bookmarks: _bookmarks.toList()..sort(),
+    );
+  }
+
+  // Old text-only version. Unused now; you can delete this whole function.
+  // ignore: unused_element
+  Future<void> _exportNotesLegacy() async {
     final store = _store;
     if (store == null) return;
 
