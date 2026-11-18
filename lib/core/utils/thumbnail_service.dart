@@ -111,7 +111,7 @@ class ThumbnailService {
         height: h,
         fullWidth: _width.toDouble(),
         fullHeight: h.toDouble(),
-        backgroundColor: const ui.Color(0xFFFFFFFF),
+        backgroundColor: 0xFFFFFFFF,
       );
       if (rendered == null) return null;
 
