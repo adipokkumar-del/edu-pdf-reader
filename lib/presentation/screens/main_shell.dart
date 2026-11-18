@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/constants/app_colors.dart';
-import '../../providers/tasks_provider.dart';
+import '../../core/utils/system_ui.dart';
 import 'home_screen.dart';
 import 'tasks_screen.dart';
 
 /// Main page: Library and Notes tabs.
+/// A tap on an empty area hides or shows the system bars.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -19,46 +20,44 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pending = context.select<TasksProvider, int>((t) => t.pending);
-
-    return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: const [HomeScreen(), TasksScreen()],
-      ),
-      bottomNavigationBar: NavigationBarTheme(
-        data: NavigationBarThemeData(
-          backgroundColor: Colors.white,
-          indicatorColor: AppColors.brownSurface,
-          labelTextStyle: WidgetStateProperty.all(
-            const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUi.style(),
+      child: Scaffold(
+        body: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: SystemUi.toggle,
+          child: IndexedStack(
+            index: _index,
+            children: const [HomeScreen(), TasksScreen()],
           ),
         ),
-        child: NavigationBar(
-          selectedIndex: _index,
-          onDestinationSelected: (i) => setState(() => _index = i),
-          destinations: [
-            const NavigationDestination(
-              icon: Icon(Icons.menu_book_outlined),
-              selectedIcon: Icon(Icons.menu_book_rounded,
-                  color: AppColors.brown),
-              label: 'Library',
+        bottomNavigationBar: NavigationBarTheme(
+          data: NavigationBarThemeData(
+            backgroundColor: Colors.white,
+            indicatorColor: AppColors.brownSurface,
+            height: 64,
+            labelTextStyle: WidgetStateProperty.all(
+              const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
             ),
-            NavigationDestination(
-              icon: Badge(
-                isLabelVisible: pending > 0,
-                label: Text('$pending'),
-                child: const Icon(Icons.checklist_rounded),
+          ),
+          child: NavigationBar(
+            selectedIndex: _index,
+            onDestinationSelected: (i) => setState(() => _index = i),
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.menu_book_outlined),
+                selectedIcon:
+                    Icon(Icons.menu_book_rounded, color: AppColors.brown),
+                label: 'Library',
               ),
-              selectedIcon: Badge(
-                isLabelVisible: pending > 0,
-                label: Text('$pending'),
-                child: const Icon(Icons.checklist_rounded,
-                    color: AppColors.brown),
+              NavigationDestination(
+                icon: Icon(Icons.checklist_rounded),
+                selectedIcon:
+                    Icon(Icons.checklist_rounded, color: AppColors.brown),
+                label: 'Notes',
               ),
-              label: 'Notes',
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
