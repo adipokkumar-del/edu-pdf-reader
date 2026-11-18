@@ -54,8 +54,10 @@ jobs:
           cp ci/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
           MAIN=$(find android/app/src/main -name 'MainActivity.kt' | head -n 1)
           PKG=$(grep -m1 '^package ' "$MAIN")
+          DIR=$(dirname "$MAIN")
           cp ci/MainActivity.kt "$MAIN"
-          sed -i "1s/.*/$PKG/" "$MAIN"
+          cp ci/Reminders.kt "$DIR/Reminders.kt"
+          sed -i "1s/.*/$PKG/" "$MAIN" "$DIR/Reminders.kt"
 
       - name: Install dependencies
         run: flutter pub get
