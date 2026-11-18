@@ -11,7 +11,7 @@ String _clock(int seconds) {
   return '${two(seconds ~/ 60)}:${two(seconds % 60)}';
 }
 
-/// Right-hand sliding panel with reading tools.
+/// Sliding panel with reading tools.
 class SidePanel extends StatelessWidget {
   const SidePanel({
     super.key,
@@ -24,7 +24,6 @@ class SidePanel extends StatelessWidget {
     required this.onExportPdf,
     required this.onExportNotes,
     required this.onExtractText,
-    required this.onFullscreen,
   });
 
   final bool annotating;
@@ -36,7 +35,6 @@ class SidePanel extends StatelessWidget {
   final VoidCallback onExportPdf;
   final VoidCallback onExportNotes;
   final VoidCallback onExtractText;
-  final VoidCallback onFullscreen;
 
   static const _modeLabels = {
     ReadingMode.normal: 'Normal',
@@ -74,7 +72,6 @@ class SidePanel extends StatelessWidget {
         color: dark ? const Color(0xFF1B1411) : Colors.white,
         elevation: 12,
         child: SafeArea(
-          left: false,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
@@ -95,6 +92,11 @@ class SidePanel extends StatelessWidget {
                 ],
               ),
               _ActionTile(
+                icon: Icons.draw_outlined,
+                label: annotating ? 'Stop annotating' : 'Annotate',
+                onTap: onAnnotate,
+              ),
+              _ActionTile(
                 icon: Icons.search_rounded,
                 label: 'Search',
                 onTap: onSearch,
@@ -103,16 +105,6 @@ class SidePanel extends StatelessWidget {
                 icon: Icons.copy_all_rounded,
                 label: 'Extract page text',
                 onTap: onExtractText,
-              ),
-              _ActionTile(
-                icon: Icons.fullscreen_rounded,
-                label: 'Full screen',
-                onTap: onFullscreen,
-              ),
-              _ActionTile(
-                icon: Icons.search_rounded,
-                label: 'Search',
-                onTap: onSearch,
               ),
               _ActionTile(
                 icon: Icons.bookmarks_outlined,
@@ -163,15 +155,8 @@ class SidePanel extends StatelessWidget {
               ),
               _SliderRow(
                 label: 'Scroll ${s.scrollSpeed.toStringAsFixed(1)}×',
-                value: ((s.scrollSpeed - 1) / 2).clamp(0.0, 1.0),
-                onChanged: (v) => s.setScrollSpeed(1 + v * 2),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text('Panel on left side'),
-                value: s.panelLeft,
-                onChanged: s.setPanelLeft,
+                value: ((s.scrollSpeed - 1) / 4).clamp(0.0, 1.0),
+                onChanged: (v) => s.setScrollSpeed(1 + v * 4),
               ),
               const Divider(height: 28),
               const _Heading('Page texture'),
@@ -199,6 +184,16 @@ class SidePanel extends StatelessWidget {
               const Divider(height: 28),
               const _Heading('Focus'),
               const FocusTile(),
+              const SizedBox(height: 12),
+              const Text(
+                'Tip: long-press the round button and drag it anywhere. '
+                'Tap the page once to hide or show the bars.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                ),
+              ),
             ],
           ),
         ),
