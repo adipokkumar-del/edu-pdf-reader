@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 
-/// Talks to MainActivity.kt (incoming PDFs, Do Not Disturb).
+/// Talks to MainActivity.kt (incoming PDFs, Do Not Disturb, reminders).
 abstract final class NativeBridge {
   static const _channel = MethodChannel('edu_pdf/native');
 
@@ -22,6 +22,7 @@ abstract final class NativeBridge {
 
   static Future<String?> initialPdf() => _call<String>('getInitialPdf');
 
+  // Do Not Disturb
   static Future<bool> hasDndAccess() async =>
       await _call<bool>('hasDndAccess') ?? false;
 
@@ -29,6 +30,17 @@ abstract final class NativeBridge {
 
   static Future<bool> setMute(bool enabled) async =>
       await _call<bool>('setMute', {'enabled': enabled}) ?? false;
+
+  // Reminders and alarms
+  static Future<void> syncReminders(String json) async {
+    await _call<bool>('syncReminders', {'json': json});
+  }
+
+  static Future<bool> canExactAlarms() async =>
+      await _call<bool>('canExactAlarms') ?? true;
+
+  static Future<void> openExactAlarmSettings() =>
+      _call<void>('openExactAlarmSettings');
 
   static Future<T?> _call<T>(String method, [Object? args]) async {
     if (!Platform.isAndroid) return null;
