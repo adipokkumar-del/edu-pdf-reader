@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../data/models/task_model.dart';
 import '../../providers/tasks_provider.dart';
+import '../../data/services/share_notes.dart';
 import '../widgets/empty_state.dart';
 import 'task_editor_screen.dart';
 
@@ -41,7 +42,34 @@ class _TasksScreenState extends State<TasksScreen> {
         all.where((t) => !t.completed && t.remindAt != null).length;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Notes & Checklists')),
+      appBar: AppBar(
+        title: const Text('Notes & Checklists'),
+        actions: [
+          IconButton(
+            tooltip: 'Import notes',
+            icon: const Icon(Icons.file_download_outlined),
+            onPressed: () => importNotesFromPicker(context),
+          ),
+          PopupMenuButton<ShareFormat>(
+            tooltip: 'Share all',
+            color: Colors.white,
+            icon: const Icon(Icons.ios_share_rounded),
+            enabled: all.isNotEmpty,
+            onSelected: (f) => shareTasks(context, provider.ordered, f),
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: ShareFormat.pdf,
+                child: Text('Share all as PDF'),
+              ),
+              PopupMenuItem(
+                value: ShareFormat.app,
+                child: Text('Share all as app file'),
+              ),
+            ],
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _edit,
         backgroundColor: AppColors.brown,
@@ -204,6 +232,10 @@ class _TaskCard extends StatelessWidget {
                     color: Colors.white,
                     onSelected: (v) {
                       switch (v) {
+                        case 'share_pdf':
+                          shareTasks(context, [task], ShareFormat.pdf);
+                        case 'share_app':
+                          shareTasks(context, [task], ShareFormat.app);
                         case 'edit':
                           onEdit();
                         case 'done':
@@ -225,6 +257,10 @@ class _TaskCard extends StatelessWidget {
                     },
                     itemBuilder: (_) => [
                       const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                      const PopupMenuItem(
+                          value: 'share_pdf', child: Text('Share as PDF')),
+                      const PopupMenuItem(
+                          value: 'share_app', child: Text('Share as app file')),
                       PopupMenuItem(
                         value: 'done',
                         child: Text(done ? 'Mark as not done' : 'Mark as done'),
