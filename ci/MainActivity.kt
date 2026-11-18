@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.OpenableColumns
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -51,6 +52,26 @@ class MainActivity : FlutterActivity() {
                         restoreDnd()
                         result.success(true)
                     }
+                }
+                "syncReminders" -> {
+                    Reminders.sync(this, call.argument<String>("json") ?: "[]")
+                    result.success(true)
+                }
+                "canExactAlarms" -> result.success(Reminders.canExact(this))
+                "openExactAlarmSettings" -> {
+                    if (Build.VERSION.SDK_INT >= 31) {
+                        try {
+                            startActivity(
+                                Intent(
+                                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                    Uri.parse("package:$packageName")
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        } catch (e: Exception) {
+                            // Settings screen not available on this device.
+                        }
+                    }
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }
