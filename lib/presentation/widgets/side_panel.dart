@@ -23,6 +23,8 @@ class SidePanel extends StatelessWidget {
     required this.onNotes,
     required this.onExportPdf,
     required this.onExportNotes,
+    required this.onExtractText,
+    required this.onFullscreen,
   });
 
   final bool annotating;
@@ -33,6 +35,8 @@ class SidePanel extends StatelessWidget {
   final VoidCallback onNotes;
   final VoidCallback onExportPdf;
   final VoidCallback onExportNotes;
+  final VoidCallback onExtractText;
+  final VoidCallback onFullscreen;
 
   static const _modeLabels = {
     ReadingMode.normal: 'Normal',
@@ -91,9 +95,19 @@ class SidePanel extends StatelessWidget {
                 ],
               ),
               _ActionTile(
-                icon: Icons.draw_outlined,
-                label: annotating ? 'Stop annotating' : 'Annotate',
-                onTap: onAnnotate,
+                icon: Icons.search_rounded,
+                label: 'Search',
+                onTap: onSearch,
+              ),
+              _ActionTile(
+                icon: Icons.copy_all_rounded,
+                label: 'Extract page text',
+                onTap: onExtractText,
+              ),
+              _ActionTile(
+                icon: Icons.fullscreen_rounded,
+                label: 'Full screen',
+                onTap: onFullscreen,
               ),
               _ActionTile(
                 icon: Icons.search_rounded,
@@ -146,6 +160,18 @@ class SidePanel extends StatelessWidget {
                 value: s.brightness,
                 min: 0.4,
                 onChanged: s.setBrightness,
+              ),
+              _SliderRow(
+                label: 'Scroll ${s.scrollSpeed.toStringAsFixed(1)}×',
+                value: ((s.scrollSpeed - 1) / 2).clamp(0.0, 1.0),
+                onChanged: (v) => s.setScrollSpeed(1 + v * 2),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Panel on left side'),
+                value: s.panelLeft,
+                onChanged: s.setPanelLeft,
               ),
               const Divider(height: 28),
               const _Heading('Page texture'),
