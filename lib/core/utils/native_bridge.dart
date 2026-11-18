@@ -42,6 +42,9 @@ abstract final class NativeBridge {
   static Future<void> openExactAlarmSettings() =>
       _call<void>('openExactAlarmSettings');
 
+  /// Opens the system file picker and returns a readable file path, or null.
+  static Future<String?> pickFile() => _call<String>('pickFile');
+
   static Future<T?> _call<T>(String method, [Object? args]) async {
     if (!Platform.isAndroid) return null;
     try {
