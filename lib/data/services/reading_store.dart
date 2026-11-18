@@ -2,17 +2,20 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Where you stopped: a page, how far down that page, and the zoom.
+/// Positions are relative to the page, so they stay correct even while the
+/// viewer is still measuring the other pages.
 class ReadingPosition {
   const ReadingPosition({
     required this.page,
-    required this.x,
-    required this.y,
+    required this.fx,
+    required this.fy,
     required this.zoom,
   });
 
   final int page;
-  final double x;
-  final double y;
+  final double fx;
+  final double fy;
   final double zoom;
 }
 
@@ -34,9 +37,9 @@ class ReadingStore {
       final m = jsonDecode(raw) as Map<String, dynamic>;
       return ReadingPosition(
         page: m['p'] as int,
-        x: (m['x'] as num).toDouble(),
-        y: (m['y'] as num).toDouble(),
-        zoom: (m['z'] as num).toDouble(),
+        fx: (m['fx'] as num?)?.toDouble() ?? 0,
+        fy: (m['fy'] as num?)?.toDouble() ?? 0,
+        zoom: (m['z'] as num?)?.toDouble() ?? 0,
       );
     } catch (_) {
       return null;
@@ -46,7 +49,7 @@ class ReadingStore {
   void savePosition(ReadingPosition p) {
     _prefs.setString(
       _positionKey,
-      jsonEncode({'p': p.page, 'x': p.x, 'y': p.y, 'z': p.zoom}),
+      jsonEncode({'p': p.page, 'fx': p.fx, 'fy': p.fy, 'z': p.zoom}),
     );
   }
 
