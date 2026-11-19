@@ -44,18 +44,20 @@ class _ScrollIndicatorsState extends State<ScrollIndicators> {
   void _onMove() {
     _hide?.cancel();
     _hide = Timer(const Duration(milliseconds: 900), () {
-      if (mounted) setState(() => _visible = false);
+      if (mounted && _visible) setState(() => _visible = false);
     });
 
-    void apply() {
+    // Only rebuild when the indicators actually have to appear.
+    if (_visible) return;
+    void show() {
       if (mounted) setState(() => _visible = true);
     }
 
     if (SchedulerBinding.instance.schedulerPhase ==
         SchedulerPhase.persistentCallbacks) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => apply());
+      WidgetsBinding.instance.addPostFrameCallback((_) => show());
     } else {
-      apply();
+      show();
     }
   }
 
@@ -63,73 +65,89 @@ class _ScrollIndicatorsState extends State<ScrollIndicators> {
   Widget build(BuildContext context) {
     final color = (widget.dark ? Colors.white : AppColors.brownDark)
         .withValues(alpha: 0.45);
-    Widget content = const SizedBox.shrink();
-
-    if (widget.controller.isReady) {
-      try {
-        final doc = widget.controller.documentSize;
-        final view = widget.controller.visibleRect;
-        final inset = widget.inset;
-
-        content = LayoutBuilder(builder: (context, box) {
-          final children = <Widget>[];
-
-          final trackH = box.maxHeight - inset.vertical;
-          if (doc.height > view.height + 1 && trackH > 40) {
-            final length =
-                (trackH * view.height / doc.height).clamp(28.0, trackH).toDouble();
-            final range = doc.height - view.height;
-            final frac = range <= 0 ? 0.0 : (view.top / range).clamp(0.0, 1.0);
-            children.add(Positioned(
-              right: 2,
-              top: inset.top + frac * (trackH - length),
-              width: 3,
-              height: length,
-              child: _Thumb(color: color),
-            ));
-          }
-
-          final trackW = box.maxWidth - inset.horizontal;
-          if (view.width < doc.width * 0.97 && trackW > 40) {
-            final length =
-                (trackW * view.width / doc.width).clamp(28.0, trackW).toDouble();
-            final range = doc.width - view.width;
-            final frac = range <= 0 ? 0.0 : (view.left / range).clamp(0.0, 1.0);
-            children.add(Positioned(
-              bottom: inset.bottom + 2,
-              left: inset.left + frac * (trackW - length),
-              width: length,
-              height: 3,
-              child: _Thumb(color: color),
-            ));
-          }
-          return Stack(children: children);
-        });
-      } catch (_) {
-        content = const SizedBox.shrink();
-      }
-    }
 
     return IgnorePointer(
       child: AnimatedOpacity(
         opacity: _visible ? 1 : 0,
         duration: const Duration(milliseconds: 300),
-        child: content,
+        child: CustomPaint(
+          size: Size.infinite,
+          painter: _IndicatorPainter(
+            controller: widget.controller,
+            color: color,
+            inset: widget.inset,
+          ),
+        ),
       ),
     );
   }
 }
 
-class _Thumb extends StatelessWidget {
-  const _Thumb({required this.color});
+/// Repaints on every viewer movement without rebuilding any widget.
+class _IndicatorPainter extends CustomPainter {
+  _IndicatorPainter({
+    required this.controller,
+    required this.color,
+    required this.inset,
+  }) : super(repaint: controller);
 
+  final PdfViewerController controller;
   final Color color;
+  final EdgeInsets inset;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(3),
-        ),
-      );
+  void paint(Canvas canvas, Size size) {
+    if (!controller.isReady) return;
+    try {
+      final doc = controller.documentSize;
+      final view = controller.visibleRect;
+      final paint = Paint()..color = color;
+
+      final trackH = size.height - inset.vertical;
+      if (doc.height > view.height + 1 && trackH > 40) {
+        final length =
+            (trackH * view.height / doc.height).clamp(28.0, trackH).toDouble();
+        final range = doc.height - view.height;
+        final frac = range <= 0 ? 0.0 : (view.top / range).clamp(0.0, 1.0);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(
+              size.width - 5,
+              inset.top + frac * (trackH - length),
+              3,
+              length,
+            ),
+            const Radius.circular(3),
+          ),
+          paint,
+        );
+      }
+
+      final trackW = size.width - inset.horizontal;
+      if (view.width < doc.width * 0.97 && trackW > 40) {
+        final length =
+            (trackW * view.width / doc.width).clamp(28.0, trackW).toDouble();
+        final range = doc.width - view.width;
+        final frac = range <= 0 ? 0.0 : (view.left / range).clamp(0.0, 1.0);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(
+              inset.left + frac * (trackW - length),
+              size.height - inset.bottom - 5,
+              length,
+              3,
+            ),
+            const Radius.circular(3),
+          ),
+          paint,
+        );
+      }
+    } catch (_) {
+      // The viewer is not ready yet; nothing to draw.
+    }
+  }
+
+  @override
+  bool shouldRepaint(_IndicatorPainter old) =>
+      old.color != color || old.inset != inset;
 }
