@@ -83,6 +83,19 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Used after a rename or delete done from the UI, so the list updates at once.
+  void applyRename(String oldPath, PdfDocumentModel updated) {
+    _all = [for (final d in _all) d.path == oldPath ? updated : d];
+    _apply();
+    notifyListeners();
+  }
+
+  void applyDelete(String path) {
+    _all = _all.where((d) => d.path != path).toList();
+    _apply();
+    notifyListeners();
+  }
+
   void setSort(SortOption option) {
     if (option == _sort) {
       _ascending = !_ascending;
