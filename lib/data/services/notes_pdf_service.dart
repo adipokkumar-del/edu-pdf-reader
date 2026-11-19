@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart' show PdfPageFormat;
 import 'package:pdf/widgets.dart' as pw;
 
+import '../../core/utils/stroke_painting.dart';
+import '../models/annotation_model.dart';
 import '../models/task_model.dart';
 import 'note_exchange.dart';
 
@@ -80,6 +82,10 @@ abstract final class NotesPdfService {
       }
       for (final item in t.items) {
         c.checkItem(item.text, item.done);
+      }
+      if (t.sketch.isNotEmpty) {
+        c.gap(8);
+        c.sketch(t.sketch);
       }
       final at = t.remindAt;
       if (at != null) {
@@ -243,6 +249,33 @@ class _Composer {
       index += take;
       if (index < lines.length) _start();
     }
+  }
+
+  /// A drawing, drawn on a white sheet with a thin border.
+  void sketch(List<Stroke> strokes) {
+    const boxW = 720.0;
+    const boxH = boxW / 0.8;
+    final canvas = _reserve(boxH);
+    final top = _y;
+
+    canvas.save();
+    canvas.translate(_margin, top);
+    const rect = Rect.fromLTWH(0, 0, boxW, boxH);
+    canvas.drawRect(rect, Paint()..color = const Color(0xFFFFFFFF));
+    canvas.clipRect(rect);
+    for (final s in strokes) {
+      paintStroke(canvas, const Size(boxW, boxH), s);
+    }
+    canvas.restore();
+
+    canvas.drawRect(
+      Rect.fromLTWH(_margin, top, boxW, boxH),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..color = _rule,
+    );
+    _y += boxH + 12;
   }
 
   void checkItem(String value, bool done) {
