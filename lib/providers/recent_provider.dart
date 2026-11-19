@@ -63,6 +63,15 @@ class RecentProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void rename(String from, String to) {
+    entries = [
+      for (final e in entries)
+        e.path == from ? RecentEntry(to, e.openedAt) : e,
+    ];
+    _save();
+    notifyListeners();
+  }
+
   void remove(String path) {
     entries = entries.where((e) => e.path != path).toList();
     _save();
