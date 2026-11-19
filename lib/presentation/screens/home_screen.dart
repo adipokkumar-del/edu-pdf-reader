@@ -7,6 +7,7 @@ import '../../providers/library_provider.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/pdf_file_tile.dart';
 import '../widgets/recent_strip.dart';
+import '../widgets/library_menu.dart';
 import 'reader_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -133,6 +134,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ],
               ),
               actions: [
+                const LibraryMenu(),
                 IconButton(
                   tooltip: 'Rescan storage',
                   icon: const Icon(Icons.refresh_rounded),
