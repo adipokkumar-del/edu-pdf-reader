@@ -6,6 +6,8 @@ import '../../data/models/task_model.dart';
 import '../../providers/tasks_provider.dart';
 import '../../data/services/share_notes.dart';
 import '../widgets/empty_state.dart';
+import '../../data/services/save_notes.dart';
+import 'sketch_screen.dart';
 import 'task_editor_screen.dart';
 
 class TasksScreen extends StatefulWidget {
@@ -49,6 +51,13 @@ class _TasksScreenState extends State<TasksScreen> {
             tooltip: 'Import notes',
             icon: const Icon(Icons.file_download_outlined),
             onPressed: () => importNotesFromPicker(context),
+          ),
+          IconButton(
+            tooltip: 'Save all as PDF',
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            onPressed: all.isEmpty
+                ? null
+                : () => saveTasksAsPdf(context, provider.ordered),
           ),
           PopupMenuButton<ShareFormat>(
             tooltip: 'Share all',
@@ -232,6 +241,8 @@ class _TaskCard extends StatelessWidget {
                     color: Colors.white,
                     onSelected: (v) {
                       switch (v) {
+                        case 'save_pdf':
+                          saveTasksAsPdf(context, [task]);
                         case 'share_pdf':
                           shareTasks(context, [task], ShareFormat.pdf);
                         case 'share_app':
@@ -259,6 +270,8 @@ class _TaskCard extends StatelessWidget {
                       const PopupMenuItem(value: 'edit', child: Text('Edit')),
                       const PopupMenuItem(
                           value: 'share_pdf', child: Text('Share as PDF')),
+                      const PopupMenuItem(
+                          value: 'save_pdf', child: Text('Save as PDF')),
                       const PopupMenuItem(
                           value: 'share_app', child: Text('Share as app file')),
                       PopupMenuItem(
@@ -319,6 +332,14 @@ class _TaskCard extends StatelessWidget {
                       fontSize: 12,
                       color: AppColors.textSecondary,
                     ),
+                  ),
+                ),
+              if (task.sketch.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, right: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: SketchPreview(strokes: task.sketch, height: 130),
                   ),
                 ),
               if (remindAt != null || task.items.isNotEmpty)
