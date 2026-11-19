@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/system_ui.dart';
+import '../widgets/default_pdf_dialog.dart';
 import 'home_screen.dart';
 import 'tasks_screen.dart';
 
@@ -17,6 +18,15 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // First launch only: offer to make this the default PDF app.
+    Future<void>.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) DefaultPdfDialog.promptOnce(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
