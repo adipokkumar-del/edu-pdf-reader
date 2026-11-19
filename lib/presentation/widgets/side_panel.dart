@@ -24,6 +24,7 @@ class SidePanel extends StatelessWidget {
     required this.onExportPdf,
     required this.onExportNotes,
     required this.onExtractText,
+    required this.onViewMode,
   });
 
   final bool annotating;
@@ -35,6 +36,7 @@ class SidePanel extends StatelessWidget {
   final VoidCallback onExportPdf;
   final VoidCallback onExportNotes;
   final VoidCallback onExtractText;
+  final ValueChanged<String> onViewMode;
 
   static const _modeLabels = {
     ReadingMode.normal: 'Normal',
@@ -127,6 +129,29 @@ class SidePanel extends StatelessWidget {
                 icon: Icons.text_snippet_outlined,
                 label: 'Share notes…',
                 onTap: onExportNotes,
+              ),
+              const Divider(height: 28),
+              const _Heading('View'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.fit_screen_rounded, size: 16),
+                    label: const Text('Fit width'),
+                    onPressed: () => onViewMode('width'),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.crop_portrait_rounded, size: 16),
+                    label: const Text('Fit page'),
+                    onPressed: () => onViewMode('page'),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.zoom_out_map_rounded, size: 16),
+                    label: const Text('Zoom out'),
+                    onPressed: () => onViewMode('overview'),
+                  ),
+                ],
               ),
               const Divider(height: 28),
               const _Heading('Display'),
