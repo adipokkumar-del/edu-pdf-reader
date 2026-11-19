@@ -46,3 +46,8 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+
+# Pin: jni 1.2.0 (released 2026-11-18) crashes path_provider_android in release builds.
+dependency_overrides:
+  jni: 1.1.2
+  jni_flutter: 1.0.4+1
