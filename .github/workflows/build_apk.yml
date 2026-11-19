@@ -58,6 +58,8 @@ jobs:
           cp ci/MainActivity.kt "$MAIN"
           cp ci/Reminders.kt "$DIR/Reminders.kt"
           sed -i "1s/.*/$PKG/" "$MAIN" "$DIR/Reminders.kt"
+          mkdir -p android/app/src/main/res/xml
+          cp ci/file_paths.xml android/app/src/main/res/xml/file_paths.xml
 
       - name: Install dependencies
         run: flutter pub get
@@ -66,7 +68,7 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
-        run: flutter build apk --release --split-per-abi
+        run: flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/debug-info
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
