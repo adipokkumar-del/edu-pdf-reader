@@ -192,6 +192,7 @@ object Reminders {
             .setContentText(r.text)
             .setStyle(Notification.BigTextStyle().bigText(r.text))
             .setAutoCancel(true)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setCategory(if (r.alarm) Notification.CATEGORY_ALARM else Notification.CATEGORY_REMINDER)
 
         val launch = ctx.packageManager.getLaunchIntentForPackage(ctx.packageName)
@@ -219,6 +220,9 @@ class ReminderReceiver : BroadcastReceiver() {
         if (id >= 0) Reminders.fire(context, id)
     }
 }
+
+/** Lets other apps read the small sample PDF used to pick the default PDF app. */
+class EduFileProvider : androidx.core.content.FileProvider()
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
