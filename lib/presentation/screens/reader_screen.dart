@@ -159,6 +159,13 @@ class _ReaderScreenState extends State<ReaderScreen>
   PdfViewerParams _buildParams() => PdfViewerParams(
         backgroundColor: _settings.viewerBackground,
         margin: 8,
+        // Lets you zoom out far enough to see several pages at once.
+        // ignore: deprecated_member_use
+        minScale: 0.2,
+        // ignore: deprecated_member_use
+        useAlternativeFitScaleAsMinScale: false,
+        verticalCacheExtent: 1.5,
+        onePassRenderingSizeThreshold: 1600,
         pageImageColorFilter: _settings.pageFilter,
         interactionEndFrictionCoefficient: _friction(_settings.scrollSpeed),
         textSelectionParams: const PdfTextSelectionParams(enabled: true),
@@ -534,6 +541,37 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   // ---- Other actions ------------------------------------------------------
 
+  /// Quick zoom presets: fit the width, fit the whole page, or zoom out
+  /// to see several pages at once.
+  Future<void> _setView(String mode) async {
+    if (!_controller.isReady) return;
+    final page = _page.value;
+    try {
+      switch (mode) {
+        case 'width':
+          {
+            final matrix = _controller.calcMatrixFitWidthForPage(pageNumber: page);
+            if (matrix != null) await _controller.goTo(matrix);
+          }
+        case 'page':
+          {
+            final matrix = _controller.calcMatrixForFit(pageNumber: page);
+            if (matrix != null) await _controller.goTo(matrix);
+          }
+        case 'overview':
+          {
+            final fit = _controller.alternativeFitScale ?? _controller.currentZoom;
+            final target = math.max(fit * 0.45, _controller.minScale);
+            final view = _controller.viewSize;
+            await _controller.zoomOnLocalPosition(
+              localPosition: Offset(view.width / 2, view.height / 2),
+              newZoom: target,
+            );
+          }
+      }
+    } catch (_) {}
+  }
+
   Future<void> _goTo() async {
     final controller = TextEditingController();
     final total = _pageCount.value;
@@ -786,6 +824,7 @@ class _ReaderScreenState extends State<ReaderScreen>
             onExportPdf: () => closePanelThen(_exportPdf),
             onExportNotes: () => closePanelThen(_exportNotes),
             onExtractText: () => closePanelThen(_extractText),
+            onViewMode: (mode) => closePanelThen(() => _setView(mode)),
           ),
         ),
 
