@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants/app_colors.dart';
 import '../../data/models/pdf_document_model.dart';
 import '../../providers/recent_provider.dart';
+import '../../data/services/file_actions.dart';
 import 'pdf_thumbnail.dart';
 
 class PdfFileTile extends StatelessWidget {
@@ -87,8 +88,31 @@ class PdfFileTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.textSecondary),
+                PopupMenuButton<String>(
+                  tooltip: 'More',
+                  color: Colors.white,
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.more_vert_rounded,
+                      color: AppColors.textSecondary),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'details':
+                        FileActions.details(context, document);
+                      case 'rename':
+                        FileActions.rename(context, document);
+                      case 'share':
+                        FileActions.share(document);
+                      case 'delete':
+                        FileActions.delete(context, document);
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'details', child: Text('Details')),
+                    PopupMenuItem(value: 'rename', child: Text('Rename')),
+                    PopupMenuItem(value: 'share', child: Text('Share')),
+                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
+                ),
               ],
             ),
           ),
