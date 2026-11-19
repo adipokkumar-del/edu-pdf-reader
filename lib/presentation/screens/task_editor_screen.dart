@@ -6,6 +6,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/utils/native_bridge.dart';
 import '../../data/models/task_model.dart';
 import '../../providers/tasks_provider.dart';
+import '../../data/models/annotation_model.dart';
+import 'sketch_screen.dart';
 
 class _Row {
   _Row(String text, this.done)
@@ -40,6 +42,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
   bool _alarm = false;
   bool _daily = false;
   DateTime? _when;
+  List<Stroke> _sketch = [];
   bool _exactOk = true;
 
   @override
@@ -56,6 +59,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
       _remind = t.remindAt != null;
       _alarm = t.alarm;
       _daily = t.repeatDaily;
+      _sketch = List.of(t.sketch);
     }
     _checkExact();
   }
@@ -135,7 +139,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
     final title = _title.text.trim();
     final body = _body.text.trim();
 
-    if (title.isEmpty && body.isEmpty && items.isEmpty) {
+    if (title.isEmpty && body.isEmpty && items.isEmpty && _sketch.isEmpty) {
       Navigator.pop(context);
       return;
     }
@@ -159,6 +163,7 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
       ..title = title
       ..body = body
       ..items = items
+      ..sketch = _sketch
       ..remindAt = when
       ..alarm = _alarm
       ..repeatDaily = _daily && when != null;
@@ -211,6 +216,9 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                 border: InputBorder.none,
               ),
             ),
+            const Divider(height: 28),
+            _heading('Drawing'),
+            _sketchTile(),
             const Divider(height: 28),
             _heading('Checklist'),
             for (final row in _rows)
@@ -328,6 +336,46 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Future<void> _editSketch() async {
+    final result = await Navigator.of(context).push<List<Stroke>>(
+      MaterialPageRoute(builder: (_) => SketchScreen(initial: _sketch)),
+    );
+    if (result != null && mounted) setState(() => _sketch = result);
+  }
+
+  Widget _sketchTile() {
+    if (_sketch.isEmpty) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: _editSketch,
+          icon: const Icon(Icons.brush_rounded),
+          label: const Text('Add drawing'),
+        ),
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        GestureDetector(
+          onTap: _editSketch,
+          child: SketchPreview(strokes: _sketch, height: 150),
+        ),
+        const SizedBox(width: 12),
+        TextButton.icon(
+          onPressed: _editSketch,
+          icon: const Icon(Icons.edit_outlined),
+          label: const Text('Edit'),
+        ),
+        IconButton(
+          tooltip: 'Remove drawing',
+          onPressed: () => setState(() => _sketch = []),
+          icon: const Icon(Icons.delete_outline_rounded),
+        ),
+      ],
     );
   }
 
