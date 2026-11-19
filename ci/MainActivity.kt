@@ -4,7 +4,14 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.content.ContentValues
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.view.WindowManager
+import androidx.core.content.FileProvider
 import android.provider.OpenableColumns
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -75,6 +82,39 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                 }
+                "saveToDownloads" -> {
+                    val src = call.argument<String>("path")
+                    val name = call.argument<String>("name")
+                    val mime = call.argument<String>("mime") ?: "application/pdf"
+                    result.success(
+                        if (src != null && name != null) saveToDownloads(File(src), name, mime) else null
+                    )
+                }
+                "defaultPdfState" -> result.success(defaultPdfState())
+                "chooseDefaultPdf" -> {
+                    val path = call.argument<String>("path")
+                    result.success(path != null && launchViewer(File(path)))
+                }
+                "openDefaultAppsSettings" -> {
+                    try {
+                        startActivity(
+                            Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    } catch (e: Exception) {
+                        // Settings screen not available on this device.
+                    }
+                    result.success(null)
+                }
+                "setSecure" -> {
+                    val enabled = call.argument<Boolean>("enabled") ?: false
+                    if (enabled) {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    } else {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                    }
+                    result.success(true)
+                }
                 "canExactAlarms" -> result.success(Reminders.canExact(this))
                 "openExactAlarmSettings" -> {
                     if (Build.VERSION.SDK_INT >= 31) {
@@ -121,6 +161,97 @@ class MainActivity : FlutterActivity() {
         val path = resolvePdf(intent)
         if (path != null && ::channel.isInitialized) {
             channel.invokeMethod("openPdf", path)
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        requestHighRefreshRate()
+    }
+
+    /** Asks for the highest refresh rate the screen offers at its current size. */
+    @Suppress("DEPRECATION")
+    private fun requestHighRefreshRate() {
+        try {
+            val display = windowManager.defaultDisplay
+            val current = display.mode
+            var best = current
+            for (mode in display.supportedModes) {
+                if (mode.physicalWidth == current.physicalWidth &&
+                    mode.physicalHeight == current.physicalHeight &&
+                    mode.refreshRate > best.refreshRate
+                ) {
+                    best = mode
+                }
+            }
+            if (best.modeId != current.modeId) {
+                val attributes = window.attributes
+                attributes.preferredDisplayModeId = best.modeId
+                window.attributes = attributes
+            }
+        } catch (e: Exception) {
+            // Keep the system default.
+        }
+    }
+
+    /** Copies a file into Downloads/EduPDF. Returns a readable location, or null. */
+    private fun saveToDownloads(src: File, name: String, mime: String): String? {
+        return try {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val values = ContentValues()
+                values.put(MediaStore.Downloads.DISPLAY_NAME, name)
+                values.put(MediaStore.Downloads.MIME_TYPE, mime)
+                values.put(
+                    MediaStore.Downloads.RELATIVE_PATH,
+                    Environment.DIRECTORY_DOWNLOADS + "/EduPDF"
+                )
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return null
+                val out = contentResolver.openOutputStream(uri) ?: return null
+                out.use { sink -> src.inputStream().use { it.copyTo(sink) } }
+            } else {
+                val dir = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "EduPDF"
+                )
+                dir.mkdirs()
+                src.copyTo(File(dir, name), true)
+            }
+            "Downloads/EduPDF/$name"
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** 'self' when this app opens PDFs by default, 'other' for another app, else 'none'. */
+    private fun defaultPdfState(): String {
+        return try {
+            val probe = Intent(Intent.ACTION_VIEW)
+            probe.setDataAndType(Uri.parse("content://edupdf.probe/sample.pdf"), "application/pdf")
+            val info = packageManager.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)
+            val pkg = info?.activityInfo?.packageName
+            when {
+                pkg == null -> "none"
+                pkg == packageName -> "self"
+                pkg == "android" || pkg.contains("resolver") -> "none"
+                else -> "other"
+            }
+        } catch (e: Exception) {
+            "none"
+        }
+    }
+
+    /** Opens a PDF so Android shows its "Open with / Always" chooser. */
+    private fun launchViewer(file: File): Boolean {
+        return try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val view = Intent(Intent.ACTION_VIEW)
+            view.setDataAndType(uri, "application/pdf")
+            view.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(view)
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 
