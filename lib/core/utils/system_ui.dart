@@ -20,17 +20,26 @@ abstract final class SystemUi {
     );
   }
 
+  // Note: SystemUiMode.edgeToEdge is ignored on Android 9 and older, so bars
+  // that were hidden would never come back. Manual mode works on every version.
+  static void _showBars() => SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: SystemUiOverlay.values,
+      );
+
   static void init() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _showBars();
     SystemChrome.setSystemUIOverlayStyle(style());
   }
 
   static void set(bool hide) {
     if (hidden.value == hide) return;
     hidden.value = hide;
-    SystemChrome.setEnabledSystemUIMode(
-      hide ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
-    );
+    if (hide) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    } else {
+      _showBars();
+    }
     if (!hide) SystemChrome.setSystemUIOverlayStyle(style());
   }
 

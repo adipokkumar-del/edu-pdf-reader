@@ -55,6 +55,11 @@ class _ReaderScreenState extends State<ReaderScreen>
   late final List<PdfViewerPagePaintCallback> _paintCallbacks;
   late PdfViewerParams _params;
 
+  // Extra room above the first page so it clears the camera notch/status bar.
+  double _topInset = 0;
+  double _lastViewTop = 0;
+  double _scrollAcc = 0;
+
   Timer? _saveTimer;
   Timer? _searchTimer;
 
@@ -174,9 +179,24 @@ class _ReaderScreenState extends State<ReaderScreen>
         pagePaintCallbacks: _paintCallbacks,
         pageOverlaysBuilder: _buildOverlays,
         calculateInitialPageNumber: _initialPage,
+        layoutPages: _layoutPages,
         onViewerReady: _onViewerReady,
         onPageChanged: _onPageChanged,
       );
+
+  /// Same vertical layout as the default, with extra space above page 1.
+  PdfPageLayout _layoutPages(List<PdfPage> pages, PdfViewerParams params) {
+    final margin = params.margin;
+    final width =
+        pages.fold<double>(0, (w, p) => math.max(w, p.width)) + margin * 2;
+    final layouts = <Rect>[];
+    var y = margin + _topInset + 28;
+    for (final page in pages) {
+      layouts.add(Rect.fromLTWH((width - page.width) / 2, y, page.width, page.height));
+      y += page.height + margin;
+    }
+    return PdfPageLayout(pageLayouts: layouts, documentSize: Size(width, y));
+  }
 
   List<Widget> _buildOverlays(
           BuildContext context, Rect pageRect, PdfPage page) =>
@@ -282,7 +302,31 @@ class _ReaderScreenState extends State<ReaderScreen>
     });
   }
 
+  /// Scrolling down hides the system bars, scrolling up brings them back.
+  void _autoHideBars() {
+    if (!_controller.isReady) return;
+    final top = _controller.visibleRect.top;
+    final delta = top - _lastViewTop;
+    _lastViewTop = top;
+    // Ignore jumps (go to page, restore position) and idle moves.
+    if (delta == 0 || delta.abs() > 400) {
+      _scrollAcc = 0;
+      return;
+    }
+    if (_searching || _panelOpen || (_annotations?.drawing ?? false)) return;
+    if ((delta > 0) != (_scrollAcc > 0)) _scrollAcc = 0;
+    _scrollAcc += delta;
+    if (_scrollAcc > 60) {
+      SystemUi.set(true);
+      _scrollAcc = 0;
+    } else if (_scrollAcc < -60) {
+      SystemUi.set(false);
+      _scrollAcc = 0;
+    }
+  }
+
   void _onViewerMoved() {
+    _autoHideBars();
     if (!_canSave) return;
     final position = _capture();
     if (position != null) _pending = position;
@@ -573,6 +617,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   }
 
   Future<void> _goTo() async {
+    SystemUi.set(false);
     final controller = TextEditingController();
     final total = _pageCount.value;
     final value = await showDialog<int>(
@@ -713,6 +758,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     required bool barVisible,
   }) {
     final padding = MediaQuery.paddingOf(context);
+    _topInset = math.max(_topInset, padding.top);
     final barHeight = kToolbarHeight + padding.top;
 
     // Round panel button: free position, stored as fractions.
@@ -812,10 +858,13 @@ class _ReaderScreenState extends State<ReaderScreen>
           child: SidePanel(
             annotating: drawing,
             onClose: () => setState(() => _panelOpen = false),
-            onSearch: () => setState(() {
-              _panelOpen = false;
-              _searching = true;
-            }),
+            onSearch: () {
+              SystemUi.set(false);
+              setState(() {
+                _panelOpen = false;
+                _searching = true;
+              });
+            },
             onBookmarks: () => closePanelThen(_showBookmarks),
             onAnnotate: () => closePanelThen(
               () => annotations.setDrawing(!drawing),
@@ -901,7 +950,10 @@ class _ReaderScreenState extends State<ReaderScreen>
         IconButton(
           tooltip: 'Search',
           icon: const Icon(Icons.search_rounded),
-          onPressed: () => setState(() => _searching = true),
+          onPressed: () {
+            SystemUi.set(false);
+            setState(() => _searching = true);
+          },
         ),
         ValueListenableBuilder<int>(
           valueListenable: _page,

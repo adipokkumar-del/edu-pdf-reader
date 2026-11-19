@@ -17,7 +17,7 @@ class StudyTimer extends ChangeNotifier {
   }
 
   static const restMinutes = 5;
-  static const focusOptions = [15, 25, 45];
+  static const focusOptions = [15, 25, 45, 60];
 
   final SharedPreferences _prefs;
   Timer? _ticker;
