@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
 
+import '../models/annotation_model.dart';
 import '../models/task_model.dart';
 
 /// The ".edunote" app format: a small JSON file that EduPDF Reader can import.
@@ -20,7 +21,7 @@ abstract final class NoteExchange {
   /// Reminders are left out on purpose: another person's times mean nothing.
   static String encode(List<TaskModel> tasks) => jsonEncode({
         'format': _marker,
-        'version': 1,
+        'version': 2,
         'exported': DateTime.now().toIso8601String(),
         'notes': [
           for (final t in tasks)
@@ -30,6 +31,7 @@ abstract final class NoteExchange {
               'items': [
                 for (final i in t.items) {'t': i.text, 'd': i.done},
               ],
+              'sketch': [for (final s in t.sketch) s.toJson()],
               'completed': t.completed,
             },
         ],
@@ -56,6 +58,10 @@ abstract final class NoteExchange {
                       text: (i['t'] as String?) ?? '',
                       done: (i['d'] as bool?) ?? false,
                     ),
+              ],
+              sketch: [
+                for (final s in (n['sketch'] as List? ?? const []))
+                  if (s is Map<String, dynamic>) Stroke.fromJson(s),
               ],
               completed: (n['completed'] as bool?) ?? false,
             ),
