@@ -1,3 +1,5 @@
+import 'annotation_model.dart';
+
 class CheckItem {
   CheckItem({required this.text, this.done = false});
 
@@ -18,18 +20,21 @@ class TaskModel {
     this.title = '',
     this.body = '',
     List<CheckItem>? items,
+    List<Stroke>? sketch,
     this.remindAt,
     this.alarm = false,
     this.repeatDaily = false,
     this.completed = false,
     DateTime? createdAt,
   })  : items = items ?? [],
+        sketch = sketch ?? [],
         createdAt = createdAt ?? DateTime.now();
 
   final int id;
   String title;
   String body;
   List<CheckItem> items;
+  List<Stroke> sketch;
   DateTime? remindAt;
   bool alarm;
   bool repeatDaily;
@@ -46,13 +51,16 @@ class TaskModel {
     if (title.trim().isNotEmpty) return title.trim();
     if (body.trim().isNotEmpty) return body.trim().split('\n').first;
     if (items.isNotEmpty) return items.first.text;
+    if (sketch.isNotEmpty) return 'Drawing';
     return 'Untitled';
   }
 
   /// Text shown in the reminder notification.
   String get reminderText {
     if (body.trim().isNotEmpty) return body.trim();
-    if (items.isNotEmpty) return '${items.length - doneCount} of ${items.length} items left';
+    if (items.isNotEmpty) {
+      return '${items.length - doneCount} of ${items.length} items left';
+    }
     return 'Tap to open';
   }
 
@@ -61,6 +69,7 @@ class TaskModel {
         'title': title,
         'body': body,
         'items': [for (final i in items) i.toJson()],
+        'sk': [for (final s in sketch) s.toJson()],
         'at': remindAt?.millisecondsSinceEpoch,
         'alarm': alarm,
         'daily': repeatDaily,
@@ -77,6 +86,10 @@ class TaskModel {
       items: [
         for (final i in (json['items'] as List? ?? const []))
           CheckItem.fromJson(i as Map<String, dynamic>),
+      ],
+      sketch: [
+        for (final s in (json['sk'] as List? ?? const []))
+          Stroke.fromJson(s as Map<String, dynamic>),
       ],
       remindAt: at == null ? null : DateTime.fromMillisecondsSinceEpoch(at),
       alarm: json['alarm'] as bool? ?? false,
