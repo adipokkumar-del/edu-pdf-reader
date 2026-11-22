@@ -24,6 +24,7 @@ import '../widgets/double_tap_zoom.dart';
 import '../widgets/drawing_canvas.dart';
 import '../widgets/notes_sheet.dart';
 import '../widgets/scroll_indicators.dart';
+import '../widgets/scroll_thumb.dart';
 import '../widgets/side_panel.dart';
 import '../widgets/toolbar_widget.dart';
 
@@ -57,6 +58,7 @@ class _ReaderScreenState extends State<ReaderScreen>
 
   // Extra room above the first page so it clears the camera notch/status bar.
   double _topInset = 0;
+  double _viewWidth = 0;
   double _lastViewTop = 0;
   double _scrollAcc = 0;
 
@@ -184,13 +186,19 @@ class _ReaderScreenState extends State<ReaderScreen>
         onPageChanged: _onPageChanged,
       );
 
-  /// Same vertical layout as the default, with extra space above page 1.
+  /// Vertical layout like the default, with two differences:
+  /// - page 1 starts right below the top ribbon (status bar + toolbar);
+  /// - a little extra side room, so the PDF opens slightly zoomed out
+  ///   instead of exactly fitting the screen width.
   PdfPageLayout _layoutPages(List<PdfPage> pages, PdfViewerParams params) {
     final margin = params.margin;
-    final width =
-        pages.fold<double>(0, (w, p) => math.max(w, p.width)) + margin * 2;
+    final maxW = pages.fold<double>(0, (w, p) => math.max(w, p.width));
+    final width = maxW * 1.08 + margin * 2;
+    // Screen distances must be converted to document units (zoom ~ view/width).
+    final toDoc = _viewWidth > 0 ? width / _viewWidth : 1.0;
+    final ribbon = _topInset + kToolbarHeight + 6;
     final layouts = <Rect>[];
-    var y = margin + _topInset + 28;
+    var y = ribbon * toDoc;
     for (final page in pages) {
       layouts.add(Rect.fromLTWH((width - page.width) / 2, y, page.width, page.height));
       y += page.height + margin;
@@ -759,6 +767,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   }) {
     final padding = MediaQuery.paddingOf(context);
     _topInset = math.max(_topInset, padding.top);
+    _viewWidth = MediaQuery.sizeOf(context).width;
     final barHeight = kToolbarHeight + padding.top;
 
     // Round panel button: free position, stored as fractions.
@@ -803,6 +812,16 @@ class _ReaderScreenState extends State<ReaderScreen>
             child: DoubleTapDragZoom(
               controller: _controller,
               onSingleTap: SystemUi.toggle,
+            ),
+          ),
+        if (!drawing)
+          Positioned.fill(
+            child: Padding(
+              padding: EdgeInsets.only(
+                top: barVisible ? barHeight : padding.top,
+                bottom: padding.bottom + 12,
+              ),
+              child: AutoHideScrollThumb(controller: _controller, dark: dark),
             ),
           ),
         AnimatedPositioned(
