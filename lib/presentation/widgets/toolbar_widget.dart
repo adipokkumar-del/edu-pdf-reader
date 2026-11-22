@@ -8,9 +8,9 @@ class AnnotationToolbar extends StatelessWidget {
   const AnnotationToolbar({super.key});
 
   static const _tools = [
-    (AnnotTool.ball, Icons.edit_rounded, 'Ball pen'),
-    (AnnotTool.fine, Icons.mode_edit_outline_rounded, 'Fine pen'),
-    (AnnotTool.marker, Icons.brush_rounded, 'Marker'),
+    (AnnotTool.pen, Icons.edit_rounded, 'Pen'),
+    (AnnotTool.marker, Icons.border_color_rounded, 'Marker'),
+    (AnnotTool.brush, Icons.brush_rounded, 'Brush'),
     (AnnotTool.highlighter, Icons.highlight_rounded, 'Highlighter'),
     (AnnotTool.eraser, Icons.auto_fix_normal_rounded, 'Eraser'),
   ];
@@ -68,14 +68,14 @@ class AnnotationToolbar extends StatelessWidget {
               else
                 Row(
                   children: [
-                    for (var i = 0; i < a.palette.length; i++)
+                    for (var i = 0; i < a.activePalette.length; i++)
                       _ColorDot(
-                        color: a.palette[i],
-                        selected: a.colorIndex == i,
+                        color: a.activePalette[i],
+                        selected: a.activeIndex == i,
                         onTap: () => a.setColorIndex(i),
                         onEdit: () async {
                           final picked =
-                              await showColorEditor(context, a.palette[i]);
+                              await showColorEditor(context, a.activePalette[i]);
                           if (picked != null) a.editPaletteColor(i, picked);
                         },
                       ),

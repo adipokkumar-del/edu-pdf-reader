@@ -52,30 +52,6 @@ class _TasksScreenState extends State<TasksScreen> {
             icon: const Icon(Icons.file_download_outlined),
             onPressed: () => importNotesFromPicker(context),
           ),
-          IconButton(
-            tooltip: 'Save all as PDF',
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            onPressed: all.isEmpty
-                ? null
-                : () => saveTasksAsPdf(context, provider.ordered),
-          ),
-          PopupMenuButton<ShareFormat>(
-            tooltip: 'Share all',
-            color: Colors.white,
-            icon: const Icon(Icons.ios_share_rounded),
-            enabled: all.isNotEmpty,
-            onSelected: (f) => shareTasks(context, provider.ordered, f),
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: ShareFormat.pdf,
-                child: Text('Share all as PDF'),
-              ),
-              PopupMenuItem(
-                value: ShareFormat.app,
-                child: Text('Share all as app file'),
-              ),
-            ],
-          ),
           const SizedBox(width: 4),
         ],
       ),

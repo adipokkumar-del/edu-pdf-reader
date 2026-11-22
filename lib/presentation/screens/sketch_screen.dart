@@ -4,20 +4,22 @@ import '../../core/constants/app_colors.dart';
 import '../../core/utils/stroke_painting.dart';
 import '../../data/models/annotation_model.dart';
 
-enum SketchTool { pen, marker, highlighter, eraser }
+enum SketchTool { pen, marker, brush, highlighter, eraser }
 
 class _Brush {
-  const _Brush(this.width, this.opacity);
+  const _Brush(this.width, this.opacity, this.kind);
 
   /// Fraction of the sheet width.
   final double width;
   final double opacity;
+  final int kind;
 }
 
 const _brushes = <SketchTool, _Brush>{
-  SketchTool.pen: _Brush(0.0065, 1.0),
-  SketchTool.marker: _Brush(0.016, 0.85),
-  SketchTool.highlighter: _Brush(0.045, 0.35),
+  SketchTool.pen: _Brush(0.0055, 1.0, StrokeKind.pen),
+  SketchTool.marker: _Brush(0.016, 0.85, StrokeKind.marker),
+  SketchTool.brush: _Brush(0.012, 1.0, StrokeKind.brush),
+  SketchTool.highlighter: _Brush(0.045, 0.6, StrokeKind.highlighter),
 };
 
 /// Width divided by height of the drawing sheet.
@@ -60,6 +62,7 @@ class _SketchPainter extends CustomPainter {
     this.liveColor = const Color(0xFF000000),
     this.liveWidth = 0,
     this.liveOpacity = 1,
+    this.liveKind = StrokeKind.pen,
   }) : super(repaint: live);
 
   final List<Stroke> strokes;
@@ -67,6 +70,7 @@ class _SketchPainter extends CustomPainter {
   final Color liveColor;
   final double liveWidth;
   final double liveOpacity;
+  final int liveKind;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -83,6 +87,7 @@ class _SketchPainter extends CustomPainter {
           colorValue: liveColor.toARGB32(),
           width: liveWidth,
           opacity: liveOpacity,
+          kind: liveKind,
         ),
       );
     }
@@ -93,7 +98,8 @@ class _SketchPainter extends CustomPainter {
       old.strokes != strokes ||
       old.liveColor != liveColor ||
       old.liveWidth != liveWidth ||
-      old.liveOpacity != liveOpacity;
+      old.liveOpacity != liveOpacity ||
+      old.liveKind != liveKind;
 }
 
 /// Small read-only view of a drawing (used on note cards and in the editor).
@@ -220,6 +226,7 @@ class _SketchScreenState extends State<SketchScreen> {
             colorValue: _palette[_color].toARGB32(),
             width: brush.width * _size,
             opacity: brush.opacity,
+            kind: brush.kind,
           ),
         ];
       });
@@ -302,6 +309,7 @@ class _SketchScreenState extends State<SketchScreen> {
                     liveColor: _palette[_color],
                     liveWidth: (brush?.width ?? 0.0065) * _size,
                     liveOpacity: brush?.opacity ?? 1,
+                    liveKind: brush?.kind ?? StrokeKind.pen,
                   ),
                 ),
               ),
@@ -315,7 +323,8 @@ class _SketchScreenState extends State<SketchScreen> {
   Widget _toolbar() {
     const tools = [
       (SketchTool.pen, Icons.edit_rounded, 'Pen'),
-      (SketchTool.marker, Icons.brush_rounded, 'Marker'),
+      (SketchTool.marker, Icons.border_color_rounded, 'Marker'),
+      (SketchTool.brush, Icons.brush_rounded, 'Brush'),
       (SketchTool.highlighter, Icons.highlight_rounded, 'Highlighter'),
       (SketchTool.eraser, Icons.auto_fix_normal_rounded, 'Eraser'),
     ];

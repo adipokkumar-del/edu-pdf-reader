@@ -40,7 +40,7 @@ class ReadingSettings extends ChangeNotifier {
   double warmth = 0.4;
   double brightness = 1.0;
   double grainStrength = 0.5;
-  double scrollSpeed = 1.7;
+  double scrollSpeed = 2.2;
   bool panelLeft = false;
   double handleFx = 1.0;
   double handleFy = 0.5;

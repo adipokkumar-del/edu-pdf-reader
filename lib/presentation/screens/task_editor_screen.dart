@@ -217,9 +217,6 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
               ),
             ),
             const Divider(height: 28),
-            _heading('Drawing'),
-            _sketchTile(),
-            const Divider(height: 28),
             _heading('Checklist'),
             for (final row in _rows)
               Row(
@@ -259,6 +256,9 @@ class _TaskEditorScreenState extends State<TaskEditorScreen> {
                 label: const Text('Add item'),
               ),
             ),
+            const Divider(height: 28),
+            _heading('Drawing'),
+            _sketchTile(),
             const Divider(height: 28),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,

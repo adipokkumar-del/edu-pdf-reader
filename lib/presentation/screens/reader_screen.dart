@@ -59,6 +59,7 @@ class _ReaderScreenState extends State<ReaderScreen>
   // Extra room above the first page so it clears the camera notch/status bar.
   double _topInset = 0;
   double _viewWidth = 0;
+  double _bottomInset = 0;
   double _lastViewTop = 0;
   double _scrollAcc = 0;
 
@@ -171,7 +172,7 @@ class _ReaderScreenState extends State<ReaderScreen>
         minScale: 0.2,
         // ignore: deprecated_member_use
         useAlternativeFitScaleAsMinScale: false,
-        verticalCacheExtent: 1.5,
+        verticalCacheExtent: 2.0,
         onePassRenderingSizeThreshold: 1600,
         pageImageColorFilter: _settings.pageFilter,
         interactionEndFrictionCoefficient: _friction(_settings.scrollSpeed),
@@ -203,6 +204,8 @@ class _ReaderScreenState extends State<ReaderScreen>
       layouts.add(Rect.fromLTWH((width - page.width) / 2, y, page.width, page.height));
       y += page.height + margin;
     }
+    // Room under the last page so it can scroll fully above the navigation bar.
+    y += (_bottomInset + 36) * toDoc;
     return PdfPageLayout(pageLayouts: layouts, documentSize: Size(width, y));
   }
 
@@ -768,6 +771,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     final padding = MediaQuery.paddingOf(context);
     _topInset = math.max(_topInset, padding.top);
     _viewWidth = MediaQuery.sizeOf(context).width;
+    _bottomInset = math.max(_bottomInset, padding.bottom);
     final barHeight = kToolbarHeight + padding.top;
 
     // Round panel button: free position, stored as fractions.

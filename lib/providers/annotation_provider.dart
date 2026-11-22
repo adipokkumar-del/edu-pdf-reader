@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/models/annotation_model.dart';
 
-enum AnnotTool { ball, fine, marker, highlighter, eraser }
+enum AnnotTool { pen, marker, brush, highlighter, eraser }
 
 class BrushSpec {
   const BrushSpec(this.width, this.opacity);
@@ -48,11 +48,22 @@ class AnnotationProvider extends ChangeNotifier {
   }
 
   static const brushes = <AnnotTool, BrushSpec>{
-    AnnotTool.ball: BrushSpec(0.0042, 1.0),
-    AnnotTool.fine: BrushSpec(0.0022, 1.0),
-    AnnotTool.marker: BrushSpec(0.0085, 0.9),
-    AnnotTool.highlighter: BrushSpec(0.03, 0.35),
+    AnnotTool.pen: BrushSpec(0.0032, 1.0),
+    AnnotTool.marker: BrushSpec(0.0095, 0.85),
+    AnnotTool.brush: BrushSpec(0.0070, 1.0),
+    AnnotTool.highlighter: BrushSpec(0.024, 0.6),
   };
+
+  /// Bright colours for the highlighter (dark colours would hide the text).
+  static const highlightPalette = <Color>[
+    Color(0xFFFFEB3B),
+    Color(0xFF76FF03),
+    Color(0xFFFF80AB),
+    Color(0xFF40C4FF),
+    Color(0xFFFFAB40),
+    Color(0xFFB388FF),
+    Color(0xFF69F0AE),
+  ];
 
   static const defaultPalette = <Color>[
     Color(0xFF3E2723),
@@ -77,14 +88,25 @@ class AnnotationProvider extends ChangeNotifier {
   /// While true, one-finger gestures scroll/zoom the PDF instead of drawing.
   bool hand = false;
 
-  AnnotTool tool = AnnotTool.ball;
+  AnnotTool tool = AnnotTool.pen;
   List<Color> palette = List.of(defaultPalette);
+  List<Color> hlPalette = List.of(highlightPalette);
   int colorIndex = 0;
+  int hlIndex = 0;
   double sizeScale = 1.0;
 
   String get _key => 'annotations:$path';
 
-  Color get color => palette[colorIndex];
+  bool get _hl => tool == AnnotTool.highlighter;
+  List<Color> get activePalette => _hl ? hlPalette : palette;
+  int get activeIndex => _hl ? hlIndex : colorIndex;
+  Color get color => activePalette[activeIndex];
+  int get currentKind => switch (tool) {
+        AnnotTool.marker => StrokeKind.marker,
+        AnnotTool.brush => StrokeKind.brush,
+        AnnotTool.highlighter => StrokeKind.highlighter,
+        _ => StrokeKind.pen,
+      };
   double get currentWidth => (brushes[tool]?.width ?? 0.004) * sizeScale;
   double get currentOpacity => brushes[tool]?.opacity ?? 1.0;
 
@@ -120,17 +142,30 @@ class AnnotationProvider extends ChangeNotifier {
   }
 
   void setColorIndex(int index) {
-    colorIndex = index;
-    _prefs.setInt('ink_color_index', index);
+    if (_hl) {
+      hlIndex = index;
+      _prefs.setInt('hl_color_index', index);
+    } else {
+      colorIndex = index;
+      _prefs.setInt('ink_color_index', index);
+    }
     notifyListeners();
   }
 
   void editPaletteColor(int index, Color value) {
-    palette = List.of(palette)..[index] = value;
-    _prefs.setStringList(
-      'ink_palette',
-      [for (final c in palette) '${c.toARGB32()}'],
-    );
+    if (_hl) {
+      hlPalette = List.of(hlPalette)..[index] = value;
+      _prefs.setStringList(
+        'hl_palette',
+        [for (final c in hlPalette) '${c.toARGB32()}'],
+      );
+    } else {
+      palette = List.of(palette)..[index] = value;
+      _prefs.setStringList(
+        'ink_palette',
+        [for (final c in palette) '${c.toARGB32()}'],
+      );
+    }
     notifyListeners();
   }
 
@@ -192,6 +227,15 @@ class AnnotationProvider extends ChangeNotifier {
         palette = [for (final v in parsed) Color(v!)];
       }
     }
+    final hlSaved = _prefs.getStringList('hl_palette');
+    if (hlSaved != null && hlSaved.length == highlightPalette.length) {
+      final parsed = [for (final s in hlSaved) int.tryParse(s)];
+      if (!parsed.contains(null)) {
+        hlPalette = [for (final v in parsed) Color(v!)];
+      }
+    }
+    hlIndex = (_prefs.getInt('hl_color_index') ?? 0)
+        .clamp(0, highlightPalette.length - 1);
     colorIndex = (_prefs.getInt('ink_color_index') ?? 0)
         .clamp(0, defaultPalette.length - 1);
     sizeScale = (_prefs.getDouble('ink_size') ?? 1.0).clamp(0.5, 2.5);
