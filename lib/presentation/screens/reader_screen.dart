@@ -881,21 +881,8 @@ class _ReaderScreenState extends State<ReaderScreen>
           child: SidePanel(
             annotating: drawing,
             onClose: () => setState(() => _panelOpen = false),
-            onSearch: () {
-              SystemUi.set(false);
-              setState(() {
-                _panelOpen = false;
-                _searching = true;
-              });
-            },
-            onBookmarks: () => closePanelThen(_showBookmarks),
-            onAnnotate: () => closePanelThen(
-              () => annotations.setDrawing(!drawing),
-            ),
-            onNotes: () => closePanelThen(_openNotes),
             onExportPdf: () => closePanelThen(_exportPdf),
             onExportNotes: () => closePanelThen(_exportNotes),
-            onExtractText: () => closePanelThen(_extractText),
             onViewMode: (mode) => closePanelThen(() => _setView(mode)),
           ),
         ),
@@ -1011,10 +998,10 @@ class _ReaderScreenState extends State<ReaderScreen>
           color: Colors.white,
           onSelected: _onMenu,
           itemBuilder: (_) => const [
+            PopupMenuItem(value: 'goto', child: Text('Go to page')),
+            PopupMenuItem(value: 'notes', child: Text('Notes')),
             PopupMenuItem(value: 'extract', child: Text('Extract page text')),
             PopupMenuItem(value: 'bookmarks', child: Text('Bookmarks')),
-            PopupMenuItem(value: 'notes', child: Text('Notes')),
-            PopupMenuItem(value: 'goto', child: Text('Go to page')),
             PopupMenuItem(value: 'share', child: Text('Share PDF')),
           ],
         ),

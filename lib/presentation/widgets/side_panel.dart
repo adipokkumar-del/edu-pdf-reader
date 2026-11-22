@@ -17,25 +17,15 @@ class SidePanel extends StatelessWidget {
     super.key,
     required this.annotating,
     required this.onClose,
-    required this.onSearch,
-    required this.onBookmarks,
-    required this.onAnnotate,
-    required this.onNotes,
     required this.onExportPdf,
     required this.onExportNotes,
-    required this.onExtractText,
     required this.onViewMode,
   });
 
   final bool annotating;
   final VoidCallback onClose;
-  final VoidCallback onSearch;
-  final VoidCallback onBookmarks;
-  final VoidCallback onAnnotate;
-  final VoidCallback onNotes;
   final VoidCallback onExportPdf;
   final VoidCallback onExportNotes;
-  final VoidCallback onExtractText;
   final ValueChanged<String> onViewMode;
 
   static const _modeLabels = {
@@ -93,32 +83,6 @@ class SidePanel extends StatelessWidget {
                   ),
                 ],
               ),
-              _ActionTile(
-                icon: Icons.draw_outlined,
-                label: annotating ? 'Stop annotating' : 'Annotate',
-                onTap: onAnnotate,
-              ),
-              _ActionTile(
-                icon: Icons.search_rounded,
-                label: 'Search',
-                onTap: onSearch,
-              ),
-              _ActionTile(
-                icon: Icons.copy_all_rounded,
-                label: 'Extract page text',
-                onTap: onExtractText,
-              ),
-              _ActionTile(
-                icon: Icons.bookmarks_outlined,
-                label: 'Bookmarks',
-                onTap: onBookmarks,
-              ),
-              _ActionTile(
-                icon: Icons.sticky_note_2_outlined,
-                label: 'Notes',
-                onTap: onNotes,
-              ),
-              const Divider(height: 28),
               const _Heading('Export'),
               _ActionTile(
                 icon: Icons.picture_as_pdf_outlined,
